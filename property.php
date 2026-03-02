@@ -143,6 +143,17 @@ $feedbackStmt->bind_param("i", $id);
 $feedbackStmt->execute();
 $feedbackResult = $feedbackStmt->get_result();
 $feedbackCount = $feedbackResult ? (int)$feedbackResult->num_rows : 0;
+$latitude = isset($row["latitude"]) ? (float)$row["latitude"] : null;
+$longitude = isset($row["longitude"]) ? (float)$row["longitude"] : null;
+$hasExactCoordinates = $latitude !== null && $longitude !== null && $latitude >= -90 && $latitude <= 90 && $longitude >= -180 && $longitude <= 180;
+if ($hasExactCoordinates) {
+    $mapEmbedUrl = "https://www.google.com/maps?q=" . urlencode($latitude . "," . $longitude) . "&z=16&output=embed";
+    $mapCaption = "Map preview based on exact coordinates provided by owner.";
+} else {
+    $mapQuery = trim((string)($row["title"] ?? "")) . ", Sector " . trim((string)($row["sector"] ?? "")) . ", Noida";
+    $mapEmbedUrl = "https://www.google.com/maps?q=" . urlencode($mapQuery) . "&output=embed";
+    $mapCaption = "Map preview based on listing title and sector.";
+}
 ?>
 
 <!DOCTYPE html>
@@ -330,6 +341,21 @@ $feedbackCount = $feedbackResult ? (int)$feedbackResult->num_rows : 0;
                             </div>
                         </div>
                     </section>
+
+                    <section class="mt-8 rounded-2xl border border-slate-200 p-5 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                        <h2 class="font-display text-xl">Location Map</h2>
+                        <p class="mt-2 text-sm text-slate-500 dark:text-slate-300"><?php echo htmlspecialchars($mapCaption); ?></p>
+                        <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+                            <iframe
+                                src="<?php echo htmlspecialchars($mapEmbedUrl); ?>"
+                                class="w-full h-80"
+                                loading="lazy"
+                                referrerpolicy="no-referrer-when-downgrade"
+                                title="Property Location Map"
+                                allowfullscreen
+                            ></iframe>
+                        </div>
+                    </section>
                 </div>
             </article>
 
@@ -404,5 +430,7 @@ $feedbackCount = $feedbackResult ? (int)$feedbackResult->num_rows : 0;
         })();
     </script>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

@@ -135,5 +135,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         })();
     </script>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

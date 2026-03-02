@@ -190,5 +190,7 @@ if (!empty($owner["profile_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . 
         })();
     </script>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

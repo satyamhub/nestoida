@@ -42,6 +42,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $description = $_POST['description'];
     $amenities = $_POST['amenities'];
     $phone = $_POST['phone'];
+    $latitudeInput = trim((string)($_POST['latitude'] ?? ''));
+    $longitudeInput = trim((string)($_POST['longitude'] ?? ''));
+    $latitude = $latitudeInput !== '' ? (float)$latitudeInput : null;
+    $longitude = $longitudeInput !== '' ? (float)$longitudeInput : null;
+
+    if (($latitudeInput !== '' || $longitudeInput !== '') && ($latitudeInput === '' || $longitudeInput === '')) {
+        $error = "Please provide both latitude and longitude for exact location.";
+    } elseif ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
+        $error = "Latitude must be between -90 and 90.";
+    } elseif ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
+        $error = "Longitude must be between -180 and 180.";
+    }
     $seaterOption = in_array($typeLower, ['pg', 'hostel'], true) ? trim($_POST['seater_option'] ?? '') : '';
     $bhkOption = in_array($typeLower, ['flat', 'apartment'], true) ? trim($_POST['bhk_option'] ?? '') : '';
 
@@ -90,11 +102,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $ownerUserId = $isOwner ? (int)$_SESSION['user_id'] : null;
 
                 if ($ownerUserId !== null) {
-                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, rent, sector, description, amenities, image, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("issssissssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
+                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, rent, sector, description, amenities, image, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("issssddissssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
                 } else {
-                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, rent, sector, description, amenities, image, phone, status) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("ssssissssss", $title, $type, $seaterOption, $bhkOption, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
+                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, rent, sector, description, amenities, image, phone, status) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("ssssddissssss", $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
                 }
 
                 if ($stmt->execute()) {
@@ -234,6 +246,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
             </div>
 
+            <div class="rounded-2xl border border-slate-200 p-4 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                <div class="flex items-center justify-between gap-3">
+                    <h3 class="font-semibold">Exact Map Location (Optional)</h3>
+                    <button id="detect-location" type="button" class="px-3 py-1.5 rounded-full border border-slate-300 text-sm">Use Current Location</button>
+                </div>
+                <div class="grid md:grid-cols-2 gap-4 mt-3">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Latitude</label>
+                        <input id="latitude" type="text" name="latitude" placeholder="28.6139" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Longitude</label>
+                        <input id="longitude" type="text" name="longitude" placeholder="77.2090" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
+                    </div>
+                </div>
+                <p id="geo-status" class="mt-2 text-xs text-slate-500 dark:text-slate-300">Add coordinates for exact map pin. Otherwise map is based on title + sector.</p>
+            </div>
+
             <div>
                 <label class="block text-sm font-semibold mb-1">Description</label>
                 <textarea name="description" rows="4" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
@@ -261,6 +291,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             const bhkWrap = document.getElementById("bhk-wrap");
             const seaterInput = document.getElementById("seater_option");
             const bhkInput = document.getElementById("bhk_option");
+            const detectLocationBtn = document.getElementById("detect-location");
+            const latitudeInput = document.getElementById("latitude");
+            const longitudeInput = document.getElementById("longitude");
+            const geoStatus = document.getElementById("geo-status");
 
             function syncTypeFields() {
                 if (!typeInput || !seaterWrap || !bhkWrap) return;
@@ -293,8 +327,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             if (typeInput) {
                 typeInput.addEventListener("change", syncTypeFields);
             }
+            if (detectLocationBtn) {
+                detectLocationBtn.addEventListener("click", function () {
+                    if (!navigator.geolocation) {
+                        if (geoStatus) geoStatus.textContent = "Geolocation not supported in this browser.";
+                        return;
+                    }
+                    if (geoStatus) geoStatus.textContent = "Detecting location...";
+                    navigator.geolocation.getCurrentPosition(function (pos) {
+                        const lat = pos.coords.latitude.toFixed(7);
+                        const lng = pos.coords.longitude.toFixed(7);
+                        if (latitudeInput) latitudeInput.value = lat;
+                        if (longitudeInput) longitudeInput.value = lng;
+                        if (geoStatus) geoStatus.textContent = "Location captured successfully.";
+                    }, function () {
+                        if (geoStatus) geoStatus.textContent = "Could not detect location. Please enter coordinates manually.";
+                    }, { enableHighAccuracy: true, timeout: 12000 });
+                });
+            }
         })();
     </script>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

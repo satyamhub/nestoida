@@ -203,5 +203,7 @@ if (!empty($admin["profile_photo"])) {
         </form>
     </main>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

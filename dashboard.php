@@ -266,7 +266,9 @@ function renderStars($avgRating)
         <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
                 <div class="flex items-center gap-3">
-                    <img src="assets/img/nestoida-logo.svg" alt="Nestoida Logo" class="w-9 h-9">
+                    <a href="index.php" aria-label="Go to homepage" class="inline-flex">
+                        <img src="assets/img/nestoida-logo.svg" alt="Nestoida Logo" class="w-9 h-9">
+                    </a>
                     <h1 class="font-display text-2xl tracking-tight">Nestoida Dashboard</h1>
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-300">Manage listings, approvals, and publishing workflow</p>
@@ -581,5 +583,7 @@ function renderStars($avgRating)
     });
     </script>
     <script src="assets/js/back-button.js"></script>
+    <script src="assets/js/nestoida-loader.js"></script>
+    <script src="assets/js/mobile-bottom-nav.js"></script>
 </body>
 </html>

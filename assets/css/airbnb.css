@@ -121,3 +121,42 @@ body.airbnb-ui {
 .airbnb-ui .mobile-slider {
     scrollbar-width: none;
 }
+
+@media (max-width: 768px) {
+    .airbnb-ui body,
+    body.airbnb-ui {
+        padding-bottom: 84px;
+    }
+
+    .airbnb-ui .mobile-bottom-nav-active {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 9998;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        gap: 8px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid var(--ab-border);
+        border-radius: 9999px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .airbnb-ui .mobile-bottom-nav-active::-webkit-scrollbar {
+        display: none;
+    }
+
+    .dark .airbnb-ui .mobile-bottom-nav-active {
+        background: rgba(22, 22, 22, 0.96);
+    }
+
+    .airbnb-ui .mobile-bottom-nav-active > * {
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+}
