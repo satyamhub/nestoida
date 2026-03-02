@@ -54,9 +54,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $typeLower = strtolower($type);
     $rent = isset($_POST["rent"]) ? (int)$_POST["rent"] : 0;
     $sector = trim($_POST["sector"] ?? "");
+    $addressLine = trim((string)($_POST["address_line"] ?? ""));
     $description = trim($_POST["description"] ?? "");
     $amenities = trim($_POST["amenities"] ?? "");
+    $furnishing = trim((string)($_POST["furnishing"] ?? ""));
+    $availableFromInput = trim((string)($_POST["available_from"] ?? ""));
+    $availableFrom = $availableFromInput !== "" ? $availableFromInput : null;
     $phone = trim($_POST["phone"] ?? "");
+    $mapUrl = trim((string)($_POST["map_url"] ?? ""));
     $seaterOption = in_array($typeLower, ['pg', 'hostel'], true) ? trim($_POST['seater_option'] ?? '') : '';
     $bhkOption = in_array($typeLower, ['flat', 'apartment'], true) ? trim($_POST['bhk_option'] ?? '') : '';
     $latitudeInput = trim((string)($_POST["latitude"] ?? ""));
@@ -121,19 +126,23 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     if ($error === "") {
         $status = "pending";
-        $updateStmt = $conn->prepare("UPDATE properties SET title=?, type=?, seater_option=?, bhk_option=?, latitude=?, longitude=?, rent=?, sector=?, description=?, amenities=?, phone=?, image=?, status=? WHERE id=? AND owner_user_id=?");
+        $updateStmt = $conn->prepare("UPDATE properties SET title=?, type=?, seater_option=?, bhk_option=?, latitude=?, longitude=?, map_url=?, rent=?, sector=?, address_line=?, description=?, amenities=?, furnishing=?, available_from=?, phone=?, image=?, status=? WHERE id=? AND owner_user_id=?");
         $updateStmt->bind_param(
-            "ssssddissssssii",
+            "ssssddsisssssssssii",
             $title,
             $type,
             $seaterOption,
             $bhkOption,
             $latitude,
             $longitude,
+            $mapUrl,
             $rent,
             $sector,
+            $addressLine,
             $description,
             $amenities,
+            $furnishing,
+            $availableFrom,
             $phone,
             $imageName,
             $status,
@@ -272,8 +281,19 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     <input type="text" name="sector" value="<?php echo htmlspecialchars($row["sector"]); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
                 </div>
                 <div>
+                    <label class="block text-sm font-semibold mb-1">Address</label>
+                    <input type="text" name="address_line" value="<?php echo htmlspecialchars((string)($row["address_line"] ?? "")); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700">
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
                     <label class="block text-sm font-semibold mb-1">Contact Phone</label>
                     <input type="text" name="phone" value="<?php echo htmlspecialchars($row["phone"]); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold mb-1">Available From</label>
+                    <input type="date" name="available_from" value="<?php echo !empty($row["available_from"]) ? htmlspecialchars((string)$row["available_from"]) : ""; ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
                 </div>
             </div>
 
@@ -284,7 +304,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 </div>
                 <div class="mt-3">
                     <label class="block text-sm font-semibold mb-1">Google Maps Link</label>
-                    <input id="maps_url" type="text" placeholder="Paste Google Maps URL to auto-fill coordinates" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
+                    <input id="maps_url" name="map_url" type="text" value="<?php echo htmlspecialchars((string)($row["map_url"] ?? "")); ?>" placeholder="Paste Google Maps URL to auto-fill coordinates" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
                 </div>
                 <div class="grid md:grid-cols-2 gap-4 mt-3">
                     <div>
@@ -307,6 +327,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             <div>
                 <label class="block text-sm font-semibold mb-1">Amenities</label>
                 <textarea name="amenities" rows="3" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"><?php echo htmlspecialchars($row["amenities"]); ?></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Furnishing</label>
+                <?php $currentFurnishing = (string)($row["furnishing"] ?? ""); ?>
+                <select name="furnishing" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
+                    <option value="" <?php echo $currentFurnishing === "" ? "selected" : ""; ?>>Select furnishing</option>
+                    <option value="Fully Furnished" <?php echo $currentFurnishing === "Fully Furnished" ? "selected" : ""; ?>>Fully Furnished</option>
+                    <option value="Semi Furnished" <?php echo $currentFurnishing === "Semi Furnished" ? "selected" : ""; ?>>Semi Furnished</option>
+                    <option value="Unfurnished" <?php echo $currentFurnishing === "Unfurnished" ? "selected" : ""; ?>>Unfurnished</option>
+                </select>
             </div>
 
             <div>

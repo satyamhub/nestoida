@@ -5,6 +5,10 @@ $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $isAdminLoggedIn = isset($_SESSION['admin']);
 $isUserLoggedIn = isset($_SESSION['user_id'], $_SESSION['user_role']);
 $userRole = $isUserLoggedIn ? $_SESSION['user_role'] : null;
+$currentUserId = $isUserLoggedIn ? (int)$_SESSION['user_id'] : 0;
+$favoriteSaved = isset($_GET["fav"]) && $_GET["fav"] === "1";
+$reportSaved = isset($_GET["report"]) && $_GET["report"] === "1";
+$inquirySaved = isset($_GET["inquiry"]) && $_GET["inquiry"] === "1";
 
 function renderStars($avgRating)
 {
@@ -33,6 +37,110 @@ function listingSpecText($row)
         return $bhk !== "" ? $bhk : "BHK not set";
     }
     return "";
+}
+
+function extractCoordsFromMapsUrl($value)
+{
+    $raw = trim((string)$value);
+    if ($raw === "") {
+        return null;
+    }
+    $decoded = urldecode($raw);
+    $patterns = [
+        '/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/',
+        '/[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/',
+        '/[?&]ll=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/',
+        '/[?&]center=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/'
+    ];
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $decoded, $m)) {
+            $lat = (float)$m[1];
+            $lng = (float)$m[2];
+            if ($lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180) {
+                return [$lat, $lng];
+            }
+        }
+    }
+    return null;
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["toggle_favorite"])) {
+    if ($currentUserId > 0 && $id > 0) {
+        $toggleStmt = $conn->prepare("SELECT id FROM user_favorites WHERE user_id=? AND property_id=? LIMIT 1");
+        $toggleStmt->bind_param("ii", $currentUserId, $id);
+        $toggleStmt->execute();
+        $toggleRes = $toggleStmt->get_result();
+        $exists = $toggleRes && $toggleRes->num_rows > 0;
+        $toggleStmt->close();
+        if ($exists) {
+            $deleteFav = $conn->prepare("DELETE FROM user_favorites WHERE user_id=? AND property_id=?");
+            $deleteFav->bind_param("ii", $currentUserId, $id);
+            $deleteFav->execute();
+            $deleteFav->close();
+        } else {
+            $insertFav = $conn->prepare("INSERT INTO user_favorites (user_id, property_id) VALUES (?, ?)");
+            $insertFav->bind_param("ii", $currentUserId, $id);
+            $insertFav->execute();
+            $insertFav->close();
+        }
+    }
+    header("Location: property.php?id=" . $id . "&fav=1");
+    exit();
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["submit_report"])) {
+    $reason = trim((string)($_POST["report_reason"] ?? ""));
+    $details = trim((string)($_POST["report_details"] ?? ""));
+    $reporterName = trim((string)($_POST["reporter_name"] ?? ""));
+    $reporterEmail = trim((string)($_POST["reporter_email"] ?? ""));
+    if ($reason !== "" && $id > 0) {
+        if ($currentUserId > 0) {
+            $reporterName = (string)($_SESSION["user_name"] ?? "User");
+            $reporterEmail = (string)($_SESSION["user_email"] ?? "");
+        } elseif ($reporterName === "") {
+            $reporterName = "Guest";
+        }
+        $insertReport = $conn->prepare("INSERT INTO listing_reports (property_id, user_id, reporter_name, reporter_email, reason, details) VALUES (?, ?, ?, ?, ?, ?)");
+        if ($insertReport) {
+            $uid = $currentUserId > 0 ? $currentUserId : null;
+            $insertReport->bind_param("iissss", $id, $uid, $reporterName, $reporterEmail, $reason, $details);
+            $insertReport->execute();
+            $insertReport->close();
+        }
+    }
+    header("Location: property.php?id=" . $id . "&report=1");
+    exit();
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["submit_inquiry"])) {
+    $name = trim((string)($_POST["inquiry_name"] ?? ""));
+    $email = trim((string)($_POST["inquiry_email"] ?? ""));
+    $phone = trim((string)($_POST["inquiry_phone"] ?? ""));
+    $message = trim((string)($_POST["inquiry_message"] ?? ""));
+    if ($message !== "" && $id > 0) {
+        if ($currentUserId > 0) {
+            $name = (string)($_SESSION["user_name"] ?? $name);
+            $email = (string)($_SESSION["user_email"] ?? $email);
+        }
+        if ($name === "") {
+            $name = "Guest";
+        }
+        $inquiryStmt = $conn->prepare("
+            INSERT INTO property_inquiries (property_id, owner_user_id, user_id, name, email, phone, message)
+            SELECT p.id, p.owner_user_id, ?, ?, ?, ?, ?
+            FROM properties p
+            WHERE p.id = ?
+            LIMIT 1
+        ");
+        if ($inquiryStmt) {
+            $uid = $currentUserId > 0 ? $currentUserId : null;
+            $inquiryStmt->bind_param("issssi", $uid, $name, $email, $phone, $message, $id);
+            $inquiryStmt->execute();
+            $inquiryStmt->close();
+        }
+    }
+    header("Location: property.php?id=" . $id . "&inquiry=1");
+    exit();
 }
 
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["submit_feedback"])) {
@@ -121,6 +229,26 @@ if (!$row) {
 }
 $feedbackSaved = isset($_GET["feedback"]) && $_GET["feedback"] === "1";
 $specText = listingSpecText($row);
+$isFavorite = false;
+if ($currentUserId > 0) {
+    $favStmt = $conn->prepare("SELECT id FROM user_favorites WHERE user_id=? AND property_id=? LIMIT 1");
+    if ($favStmt) {
+        $favStmt->bind_param("ii", $currentUserId, $id);
+        $favStmt->execute();
+        $favRes = $favStmt->get_result();
+        $isFavorite = $favRes && $favRes->num_rows > 0;
+        $favStmt->close();
+    }
+}
+$favoriteCount = 0;
+$favCountStmt = $conn->prepare("SELECT COUNT(*) AS total FROM user_favorites WHERE property_id=?");
+if ($favCountStmt) {
+    $favCountStmt->bind_param("i", $id);
+    $favCountStmt->execute();
+    $favCountRes = $favCountStmt->get_result();
+    $favoriteCount = $favCountRes ? (int)($favCountRes->fetch_assoc()["total"] ?? 0) : 0;
+    $favCountStmt->close();
+}
 
 $feedbackStmt = $conn->prepare("
     SELECT
@@ -146,6 +274,12 @@ $feedbackCount = $feedbackResult ? (int)$feedbackResult->num_rows : 0;
 $latitude = isset($row["latitude"]) ? (float)$row["latitude"] : null;
 $longitude = isset($row["longitude"]) ? (float)$row["longitude"] : null;
 $hasExactCoordinates = $latitude !== null && $longitude !== null && $latitude >= -90 && $latitude <= 90 && $longitude >= -180 && $longitude <= 180;
+$coordsFromMapUrl = extractCoordsFromMapsUrl((string)($row["map_url"] ?? ""));
+if (!$hasExactCoordinates && $coordsFromMapUrl) {
+    $latitude = $coordsFromMapUrl[0];
+    $longitude = $coordsFromMapUrl[1];
+    $hasExactCoordinates = true;
+}
 if ($hasExactCoordinates) {
     $mapEmbedUrl = "https://www.google.com/maps?q=" . urlencode($latitude . "," . $longitude) . "&z=16&output=embed";
     $mapCaption = "Map preview based on exact coordinates provided by owner.";
@@ -153,6 +287,46 @@ if ($hasExactCoordinates) {
     $mapQuery = trim((string)($row["title"] ?? "")) . ", Sector " . trim((string)($row["sector"] ?? "")) . ", Noida";
     $mapEmbedUrl = "https://www.google.com/maps?q=" . urlencode($mapQuery) . "&output=embed";
     $mapCaption = "Map preview based on listing title and sector.";
+}
+
+$nearestLandmark = "";
+if ($hasExactCoordinates) {
+    $landmarks = [
+        ["name" => "Noida Sector 18 Metro", "lat" => 28.5708, "lng" => 77.3260],
+        ["name" => "Noida City Centre Metro", "lat" => 28.5745, "lng" => 77.3561],
+        ["name" => "Botanical Garden Metro", "lat" => 28.5639, "lng" => 77.3346],
+        ["name" => "Sector 62 Electronic City Metro", "lat" => 28.6270, "lng" => 77.3649]
+    ];
+    $best = null;
+    foreach ($landmarks as $lm) {
+        $dLat = deg2rad($lm["lat"] - $latitude);
+        $dLon = deg2rad($lm["lng"] - $longitude);
+        $a = sin($dLat / 2) * sin($dLat / 2)
+            + cos(deg2rad($latitude)) * cos(deg2rad($lm["lat"])) * sin($dLon / 2) * sin($dLon / 2);
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $distanceKm = 6371 * $c;
+        if ($best === null || $distanceKm < $best["distance"]) {
+            $best = ["name" => $lm["name"], "distance" => $distanceKm];
+        }
+    }
+    if ($best) {
+        $nearestLandmark = $best["name"] . " (" . number_format((float)$best["distance"], 1) . " km)";
+    }
+}
+
+try {
+    $eventType = "view";
+    $ua = substr((string)($_SERVER["HTTP_USER_AGENT"] ?? ""), 0, 255);
+    $ip = substr((string)($_SERVER["REMOTE_ADDR"] ?? ""), 0, 64);
+    $uid = $currentUserId > 0 ? $currentUserId : null;
+    $eventStmt = $conn->prepare("INSERT INTO property_events (property_id, user_id, event_type, user_agent, ip_address) VALUES (?, ?, ?, ?, ?)");
+    if ($eventStmt) {
+        $eventStmt->bind_param("iisss", $id, $uid, $eventType, $ua, $ip);
+        $eventStmt->execute();
+        $eventStmt->close();
+    }
+} catch (Throwable $e) {
+    // Ignore analytics write failures.
 }
 ?>
 
@@ -162,6 +336,7 @@ if ($hasExactCoordinates) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($row['title']); ?> - Nestoida</title>
+    <meta name="description" content="<?php echo htmlspecialchars(substr(trim((string)$row['description']), 0, 150)); ?>">
     <script>
         (function () {
             try {
@@ -230,6 +405,18 @@ if ($hasExactCoordinates) {
                 <?php if ($specText !== "") { ?>
                     <span>·</span>
                     <span><?php echo htmlspecialchars($specText); ?></span>
+                <?php } ?>
+                <?php if (!empty($row['furnishing'])) { ?>
+                    <span>·</span>
+                    <span><?php echo htmlspecialchars((string)$row['furnishing']); ?></span>
+                <?php } ?>
+                <?php if (!empty($row['available_from'])) { ?>
+                    <span>·</span>
+                    <span>Available from <?php echo htmlspecialchars((string)$row['available_from']); ?></span>
+                <?php } ?>
+                <?php if (!empty($row['address_line'])) { ?>
+                    <span>·</span>
+                    <span><?php echo htmlspecialchars((string)$row['address_line']); ?></span>
                 <?php } ?>
             </div>
         </section>
@@ -345,6 +532,9 @@ if ($hasExactCoordinates) {
                     <section class="mt-8 rounded-2xl border border-slate-200 p-5 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
                         <h2 class="font-display text-xl">Location Map</h2>
                         <p class="mt-2 text-sm text-slate-500 dark:text-slate-300"><?php echo htmlspecialchars($mapCaption); ?></p>
+                        <?php if ($nearestLandmark !== "") { ?>
+                            <p class="mt-1 text-sm text-cyan-700 dark:text-cyan-300">Nearest metro: <?php echo htmlspecialchars($nearestLandmark); ?></p>
+                        <?php } ?>
                         <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
                             <iframe
                                 src="<?php echo htmlspecialchars($mapEmbedUrl); ?>"
@@ -380,14 +570,68 @@ if ($hasExactCoordinates) {
                     </a>
                     <p class="text-3xl font-display text-slate-900 dark:text-slate-100">Rs <?php echo (int)$row['rent']; ?><span class="text-base font-body text-slate-500 dark:text-slate-300"> / month</span></p>
                     <p class="mt-1 text-sm text-slate-500 dark:text-slate-300">Verified listing ready to contact</p>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-300">
+                        <?php if (!empty($row['available_from'])) { ?>
+                            Available from <?php echo htmlspecialchars((string)$row['available_from']); ?>
+                        <?php } else { ?>
+                            Available now
+                        <?php } ?>
+                    </p>
+                    <?php if ($favoriteSaved) { ?>
+                        <p class="mt-2 text-xs text-emerald-600 font-semibold">Saved favorites updated.</p>
+                    <?php } ?>
+                    <?php if ($reportSaved) { ?>
+                        <p class="mt-2 text-xs text-emerald-600 font-semibold">Report submitted to admin moderation queue.</p>
+                    <?php } ?>
+                    <?php if ($inquirySaved) { ?>
+                        <p class="mt-2 text-xs text-emerald-600 font-semibold">Inquiry sent to owner.</p>
+                    <?php } ?>
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-300"><?php echo (int)$favoriteCount; ?> users saved this listing</p>
                     <div class="mt-6 flex flex-col gap-3">
-                        <a class="inline-flex items-center justify-center bg-slate-900 text-white px-6 py-3 rounded-full font-semibold hover:bg-cyan-700 transition" href="tel:<?php echo htmlspecialchars($row['phone']); ?>">
+                        <?php if ($currentUserId > 0) { ?>
+                            <form method="POST">
+                                <button type="submit" name="toggle_favorite" value="1" class="w-full inline-flex items-center justify-center border border-slate-300 px-6 py-3 rounded-full font-semibold hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
+                                    <?php echo $isFavorite ? "Remove From Favorites" : "Save To Favorites"; ?>
+                                </button>
+                            </form>
+                        <?php } ?>
+                        <a class="inline-flex items-center justify-center bg-slate-900 text-white px-6 py-3 rounded-full font-semibold hover:bg-cyan-700 transition" href="tel:<?php echo htmlspecialchars($row['phone']); ?>" onclick="fetch('track-event.php?property_id=<?php echo (int)$id; ?>&type=call', {keepalive:true});">
                             Call Owner
                         </a>
                         <a class="inline-flex items-center justify-center border border-slate-300 px-6 py-3 rounded-full font-semibold hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition" href="index.php">
                             Explore More Listings
                         </a>
                     </div>
+                    <section class="mt-5 rounded-2xl border border-slate-200 p-4 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                        <h3 class="font-display text-lg">Send Inquiry</h3>
+                        <form method="POST" class="mt-3 space-y-2">
+                            <?php if (!$isUserLoggedIn) { ?>
+                                <input type="text" name="inquiry_name" placeholder="Your name" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                                <input type="email" name="inquiry_email" placeholder="Email" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                            <?php } ?>
+                            <input type="text" name="inquiry_phone" placeholder="Phone (optional)" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                            <textarea name="inquiry_message" rows="3" required placeholder="I want details about availability and visit..." class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
+                            <button type="submit" name="submit_inquiry" value="1" class="w-full px-4 py-2.5 rounded-full bg-slate-900 text-white font-semibold">Send Inquiry</button>
+                        </form>
+                    </section>
+                    <section class="mt-4 rounded-2xl border border-slate-200 p-4 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                        <h3 class="font-display text-lg">Report Listing</h3>
+                        <form method="POST" class="mt-3 space-y-2">
+                            <?php if (!$isUserLoggedIn) { ?>
+                                <input type="text" name="reporter_name" placeholder="Your name" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                                <input type="email" name="reporter_email" placeholder="Email (optional)" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                            <?php } ?>
+                            <select name="report_reason" required class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700">
+                                <option value="">Select reason</option>
+                                <option value="Spam/Fake">Spam/Fake</option>
+                                <option value="Wrong Price">Wrong Price</option>
+                                <option value="Misleading Info">Misleading Info</option>
+                                <option value="Abusive Content">Abusive Content</option>
+                            </select>
+                            <textarea name="report_details" rows="2" placeholder="Extra details (optional)" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
+                            <button type="submit" name="submit_report" value="1" class="w-full px-4 py-2.5 rounded-full border border-rose-300 text-rose-700 font-semibold hover:bg-rose-50">Report To Admin</button>
+                        </form>
+                    </section>
                     <p class="mt-5 text-xs text-slate-500 dark:text-slate-300">Nestoida helps you compare prices and details before you decide.</p>
                 </div>
             </aside>

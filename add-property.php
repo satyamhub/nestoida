@@ -39,9 +39,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $typeLower = strtolower($type);
     $rent = $_POST['rent'];
     $sector = $_POST['sector'];
+    $addressLine = trim((string)($_POST['address_line'] ?? ''));
     $description = $_POST['description'];
     $amenities = $_POST['amenities'];
+    $furnishing = trim((string)($_POST['furnishing'] ?? ''));
+    $availableFromInput = trim((string)($_POST['available_from'] ?? ''));
+    $availableFrom = $availableFromInput !== '' ? $availableFromInput : null;
     $phone = $_POST['phone'];
+    $mapUrl = trim((string)($_POST['map_url'] ?? ''));
     $latitudeInput = trim((string)($_POST['latitude'] ?? ''));
     $longitudeInput = trim((string)($_POST['longitude'] ?? ''));
     $latitude = $latitudeInput !== '' ? (float)$latitudeInput : null;
@@ -102,11 +107,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $ownerUserId = $isOwner ? (int)$_SESSION['user_id'] : null;
 
                 if ($ownerUserId !== null) {
-                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, rent, sector, description, amenities, image, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("issssddissssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
+                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, map_url, rent, sector, address_line, description, amenities, furnishing, available_from, image, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("issssddsisssssssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $imageName, $phone, $status);
                 } else {
-                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, rent, sector, description, amenities, image, phone, status) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("ssssddissssss", $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $rent, $sector, $description, $amenities, $imageName, $phone, $status);
+                    $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, map_url, rent, sector, address_line, description, amenities, furnishing, available_from, image, phone, status) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("ssssddsisssssssss", $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $imageName, $phone, $status);
                 }
 
                 if ($stmt->execute()) {
@@ -241,15 +246,30 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <input type="text" name="sector" required class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700">
                 </div>
                 <div>
+                    <label class="block text-sm font-semibold mb-1">Address</label>
+                    <input type="text" name="address_line" placeholder="House no, street, landmark..." class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700">
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
                     <label class="block text-sm font-semibold mb-1">Contact Phone</label>
                     <input type="text" name="phone" required class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold mb-1">Available From</label>
+                    <input type="date" name="available_from" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
                 </div>
             </div>
 
             <div class="rounded-2xl border border-slate-200 p-4 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
                 <div class="flex items-center justify-between gap-3">
-                    <h3 class="font-semibold">Exact Map Location (Optional)</h3>
+                    <h3 class="font-semibold">Google Map Location (Optional)</h3>
                     <button id="detect-location" type="button" class="px-3 py-1.5 rounded-full border border-slate-300 text-sm">Use Current Location</button>
+                </div>
+                <div class="mt-3">
+                    <label class="block text-sm font-semibold mb-1">Google Maps Link</label>
+                    <input id="maps_url" type="text" name="map_url" placeholder="Paste Google Maps URL to auto-fill coordinates" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
                 </div>
                 <div class="grid md:grid-cols-2 gap-4 mt-3">
                     <div>
@@ -273,6 +293,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <label class="block text-sm font-semibold mb-1">Amenities</label>
                 <textarea name="amenities" rows="3" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
             </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Furnishing</label>
+                <select name="furnishing" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">
+                    <option value="">Select furnishing</option>
+                    <option value="Fully Furnished">Fully Furnished</option>
+                    <option value="Semi Furnished">Semi Furnished</option>
+                    <option value="Unfurnished">Unfurnished</option>
+                </select>
+            </div>
 
             <div>
                 <label class="block text-sm font-semibold mb-1">Listing Image</label>
@@ -292,9 +321,35 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             const seaterInput = document.getElementById("seater_option");
             const bhkInput = document.getElementById("bhk_option");
             const detectLocationBtn = document.getElementById("detect-location");
+            const mapsUrlInput = document.getElementById("maps_url");
             const latitudeInput = document.getElementById("latitude");
             const longitudeInput = document.getElementById("longitude");
             const geoStatus = document.getElementById("geo-status");
+
+            function fillFromMapsUrl(raw) {
+                const value = (raw || "").trim();
+                if (!value) return false;
+                const decoded = decodeURIComponent(value);
+                const patterns = [
+                    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+                    /[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+                    /[?&]ll=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+                    /[?&]center=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/
+                ];
+                for (const pattern of patterns) {
+                    const match = decoded.match(pattern);
+                    if (!match) continue;
+                    const lat = parseFloat(match[1]);
+                    const lng = parseFloat(match[2]);
+                    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                        if (latitudeInput) latitudeInput.value = lat.toFixed(7);
+                        if (longitudeInput) longitudeInput.value = lng.toFixed(7);
+                        if (geoStatus) geoStatus.textContent = "Coordinates extracted from Google Maps link.";
+                        return true;
+                    }
+                }
+                return false;
+            }
 
             function syncTypeFields() {
                 if (!typeInput || !seaterWrap || !bhkWrap) return;
@@ -343,6 +398,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     }, function () {
                         if (geoStatus) geoStatus.textContent = "Could not detect location. Please enter coordinates manually.";
                     }, { enableHighAccuracy: true, timeout: 12000 });
+                });
+            }
+            if (mapsUrlInput) {
+                mapsUrlInput.addEventListener("change", function () {
+                    if (!fillFromMapsUrl(mapsUrlInput.value) && geoStatus) {
+                        geoStatus.textContent = "Could not read coordinates from URL. Enter latitude/longitude manually.";
+                    }
                 });
             }
         })();

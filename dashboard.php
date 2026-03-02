@@ -7,7 +7,7 @@ if (!isset($_SESSION['admin'])) {
     exit();
 }
 
-$allowedStatusFilters = ["all", "approved", "pending", "rejected"];
+$allowedStatusFilters = ["all", "approved", "pending", "rejected", "reported"];
 $filterStatus = isset($_GET["status"]) ? strtolower(trim($_GET["status"])) : "all";
 if (!in_array($filterStatus, $allowedStatusFilters, true)) {
     $filterStatus = "all";
@@ -94,6 +94,8 @@ if ($search !== "") {
         OR p.bhk_option LIKE ?
         OR p.description LIKE ?
         OR p.amenities LIKE ?
+        OR p.address_line LIKE ?
+        OR p.furnishing LIKE ?
         OR p.phone LIKE ?
         OR CAST(p.rent AS CHAR) LIKE ?
         OR p.status LIKE ?
@@ -109,13 +111,19 @@ if ($search !== "") {
     $params[] = $searchLike;
     $params[] = $searchLike;
     $params[] = $searchLike;
-    $types .= "ssssssssss";
+    $params[] = $searchLike;
+    $params[] = $searchLike;
+    $types .= "ssssssssssss";
 }
 
 if ($filterStatus !== "all") {
-    $whereParts[] = "p.status = ?";
-    $params[] = $filterStatus;
-    $types .= "s";
+    if ($filterStatus === "reported") {
+        $whereParts[] = "EXISTS (SELECT 1 FROM listing_reports lr WHERE lr.property_id = p.id AND lr.status='open')";
+    } else {
+        $whereParts[] = "p.status = ?";
+        $params[] = $filterStatus;
+        $types .= "s";
+    }
 }
 
 $whereClause = "";
@@ -144,7 +152,8 @@ $listSql = "
         p.*,
         p.TYPE AS type,
         COALESCE(r.avg_rating, 0) AS avg_rating,
-        COALESCE(r.rating_count, 0) AS rating_count
+        COALESCE(r.rating_count, 0) AS rating_count,
+        COALESCE(rep.report_count, 0) AS report_count
     FROM properties p
     LEFT JOIN (
         SELECT property_id, ROUND(AVG(feedback_rating), 1) AS avg_rating, COUNT(*) AS rating_count
@@ -152,6 +161,12 @@ $listSql = "
         WHERE feedback_rating BETWEEN 1 AND 5
         GROUP BY property_id
     ) r ON r.property_id = p.id
+    LEFT JOIN (
+        SELECT property_id, COUNT(*) AS report_count
+        FROM listing_reports
+        WHERE status='open'
+        GROUP BY property_id
+    ) rep ON rep.property_id = p.id
 " . $whereClause . " ORDER BY p.id DESC LIMIT ? OFFSET ?";
 $listStmt = $conn->prepare($listSql);
 $listTypes = $types . "ii";
@@ -167,11 +182,13 @@ $totalResult = $conn->query("SELECT COUNT(*) AS total FROM properties");
 $approvedResult = $conn->query("SELECT COUNT(*) AS total FROM properties WHERE status='approved'");
 $pendingResult = $conn->query("SELECT COUNT(*) AS total FROM properties WHERE status='pending' OR status IS NULL OR status=''");
 $rejectedResult = $conn->query("SELECT COUNT(*) AS total FROM properties WHERE status='rejected'");
+$reportedResult = $conn->query("SELECT COUNT(DISTINCT property_id) AS total FROM listing_reports WHERE status='open'");
 
 $total = $totalResult ? (int)$totalResult->fetch_assoc()["total"] : 0;
 $approved = $approvedResult ? (int)$approvedResult->fetch_assoc()["total"] : 0;
 $pending = $pendingResult ? (int)$pendingResult->fetch_assoc()["total"] : 0;
 $rejected = $rejectedResult ? (int)$rejectedResult->fetch_assoc()["total"] : 0;
+$reported = $reportedResult ? (int)$reportedResult->fetch_assoc()["total"] : 0;
 
 function buildDashboardQuery($search, $status, $page)
 {
@@ -278,6 +295,7 @@ function renderStars($avgRating)
                     <span id="theme-toggle-label">Dark</span>
                 </button>
                 <a href="manage-users.php" class="px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Manage Users</a>
+                <a href="manage-reports.php" class="px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Reports</a>
                 <a href="admin-profile.php" class="px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Profile</a>
                 <a href="index.php" class="px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Public Site</a>
                 <a href="add-property.php" class="px-4 py-2 rounded-full bg-slate-900 text-white hover:bg-cyan-700 transition">Add Property</a>
@@ -293,7 +311,7 @@ function renderStars($avgRating)
             <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Track approvals, detect pending updates from owners, and publish quality listings quickly.</p>
         </section>
 
-        <section class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <section class="grid sm:grid-cols-2 xl:grid-cols-5 gap-4">
             <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:bg-slate-900 dark:border-slate-800">
                 <p class="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Total</p>
                 <p class="font-display text-3xl mt-2"><?php echo $total; ?></p>
@@ -309,6 +327,10 @@ function renderStars($avgRating)
             <div class="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
                 <p class="text-xs uppercase tracking-[0.16em] text-rose-700">Rejected</p>
                 <p class="font-display text-3xl mt-2 text-rose-700"><?php echo $rejected; ?></p>
+            </div>
+            <div class="rounded-3xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
+                <p class="text-xs uppercase tracking-[0.16em] text-indigo-700">Open Reports</p>
+                <p class="font-display text-3xl mt-2 text-indigo-700"><?php echo $reported; ?></p>
             </div>
         </section>
 
@@ -332,6 +354,7 @@ function renderStars($avgRating)
                         <option value="approved" <?php echo $filterStatus === "approved" ? "selected" : ""; ?>>Approved</option>
                         <option value="pending" <?php echo $filterStatus === "pending" ? "selected" : ""; ?>>Pending</option>
                         <option value="rejected" <?php echo $filterStatus === "rejected" ? "selected" : ""; ?>>Rejected</option>
+                        <option value="reported" <?php echo $filterStatus === "reported" ? "selected" : ""; ?>>Reported</option>
                     </select>
                     <input type="hidden" name="page" value="1">
                     <button class="bg-slate-900 text-white px-5 py-3 rounded-full font-semibold hover:bg-cyan-700 transition">Apply</button>
@@ -356,6 +379,7 @@ function renderStars($avgRating)
                                 <th class="text-left px-4 py-3">Rent</th>
                                 <th class="text-left px-4 py-3">Rating</th>
                                 <th class="text-left px-4 py-3">Status</th>
+                                <th class="text-left px-4 py-3">Reports</th>
                                 <th class="text-left px-4 py-3">Actions</th>
                             </tr>
                         </thead>
@@ -371,13 +395,16 @@ function renderStars($avgRating)
                                         ($row['type'] ?? '') . ' ' .
                                         ($row['seater_option'] ?? '') . ' ' .
                                         ($row['bhk_option'] ?? '') . ' ' .
+                                        ($row['address_line'] ?? '') . ' ' .
                                         ($row['description'] ?? '') . ' ' .
                                         ($row['amenities'] ?? '') . ' ' .
+                                        ($row['furnishing'] ?? '') . ' ' .
                                         ($row['phone'] ?? '') . ' ' .
                                         (string)($row['rent'] ?? '') . ' ' .
                                         ($rowStatus ?? '')
                                     )); ?>"
                                     data-status="<?php echo htmlspecialchars(strtolower($rowStatus)); ?>"
+                                    data-reported="<?php echo (int)$row['report_count'] > 0 ? '1' : '0'; ?>"
                                 >
                                     <td class="px-4 py-3">
                                         <input type="checkbox" name="ids[]" value="<?php echo (int)$row["id"]; ?>" class="row-check h-4 w-4 rounded border-slate-300" form="bulk-form">
@@ -415,6 +442,11 @@ function renderStars($avgRating)
                                         </span>
                                     </td>
                                     <td class="px-4 py-3">
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold <?php echo (int)$row['report_count'] > 0 ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-600 border border-slate-200'; ?>">
+                                            <?php echo (int)$row['report_count']; ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3">
                                         <div class="flex flex-wrap gap-2">
                                             <a href="property.php?id=<?php echo (int)$row['id']; ?>" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">View</a>
                                             <a href="edit-property.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Edit</a>
@@ -439,14 +471,14 @@ function renderStars($avgRating)
                                 </tr>
                             <?php } ?>
                             <tr id="client-empty-row" class="hidden">
-                                <td colspan="8" class="px-4 py-10 text-center">
+                                <td colspan="9" class="px-4 py-10 text-center">
                                     <p class="font-display text-xl">No matching properties on this page</p>
                                     <p class="text-slate-500 dark:text-slate-300 mt-1">Try another search or status filter.</p>
                                 </td>
                             </tr>
                         <?php } else { ?>
                             <tr>
-                                <td colspan="8" class="px-4 py-12 text-center">
+                                <td colspan="9" class="px-4 py-12 text-center">
                                     <p class="font-display text-xl">No properties found</p>
                                     <p class="text-slate-500 dark:text-slate-300 mt-1">Try a different filter or search value.</p>
                                 </td>
@@ -523,8 +555,12 @@ function renderStars($avgRating)
         dashboardRows.forEach(function (row) {
             const searchText = row.getAttribute("data-search") || "";
             const statusText = row.getAttribute("data-status") || "";
+            const reported = row.getAttribute("data-reported") === "1";
             const matchedQuery = query === "" || searchText.includes(query);
-            const matchedStatus = selectedStatus === "all" || statusText === selectedStatus;
+            let matchedStatus = selectedStatus === "all" || statusText === selectedStatus;
+            if (selectedStatus === "reported") {
+                matchedStatus = reported;
+            }
             const show = matchedQuery && matchedStatus;
             row.classList.toggle("hidden", !show);
             if (show) visible++;

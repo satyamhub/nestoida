@@ -30,15 +30,17 @@ if ($searchQuery !== "") {
             OR p.type LIKE ?
             OR p.seater_option LIKE ?
             OR p.bhk_option LIKE ?
+            OR p.address_line LIKE ?
             OR p.description LIKE ?
             OR p.amenities LIKE ?
+            OR p.furnishing LIKE ?
             OR p.phone LIKE ?
             OR CAST(p.rent AS CHAR) LIKE ?
         )
         ORDER BY p.id DESC
     ");
     $queryLike = "%" . $searchQuery . "%";
-    $stmt->bind_param("sssssssss", $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike);
+    $stmt->bind_param("sssssssssss", $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike, $queryLike);
     $stmt->execute();
     $result = $stmt->get_result();
 } else {
@@ -102,6 +104,7 @@ function listingSpecText($row)
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nestoida</title>
+    <meta name="description" content="Find verified PGs, hostels, flats and co-living listings in Noida with pricing, availability and owner details.">
     <script>
         (function () {
             try {
@@ -158,10 +161,11 @@ function listingSpecText($row)
             <div class="flex items-center gap-3">
                 <a href="index.php" aria-label="Go to homepage" class="inline-flex">
                     <img src="assets/img/nestoida-logo.svg" alt="Nestoida Logo" class="w-9 h-9">
-                </a>
+                
                 <h1 class="font-display text-2xl tracking-tight">Nestoida</h1>
             </div>
             <p class="text-xs text-slate-500 dark:text-slate-300">Professional PG & co-living discovery</p>
+            </a>
         </div>
         <nav class="flex flex-wrap gap-2 text-sm">
             <button id="theme-toggle" type="button" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
@@ -171,6 +175,7 @@ function listingSpecText($row)
             <?php if ($isAdminLoggedIn) { ?>
                 <a href="dashboard.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Dashboard</a>
                 <a href="manage-users.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Manage Users</a>
+                <a href="manage-reports.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Reports</a>
                 <a href="admin-profile.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Profile</a>
                 <a href="add-property.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Add Property</a>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Logout</a>
@@ -180,6 +185,7 @@ function listingSpecText($row)
                     <a href="owner-profile.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Profile</a>
                     <a href="add-property.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Add Property</a>
                 <?php } ?>
+                <a href="favorites.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Favorites</a>
                 <span class="px-3 py-2 rounded-full border border-cyan-300 text-cyan-700 dark:border-cyan-600 dark:text-cyan-300 capitalize"><?php echo htmlspecialchars($userRole); ?></span>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Logout</a>
             <?php } else { ?>
@@ -241,6 +247,45 @@ function listingSpecText($row)
         </form>
     </section>
 
+    <section class="mt-5 grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div class="bg-white border border-slate-200 rounded-2xl px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+            <label class="block text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Min Price</label>
+            <input id="filter-min-rent" type="number" placeholder="0" class="w-full border-0 p-0 mt-1 bg-transparent focus:ring-0 text-sm">
+        </div>
+        <div class="bg-white border border-slate-200 rounded-2xl px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+            <label class="block text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Max Price</label>
+            <input id="filter-max-rent" type="number" placeholder="50000" class="w-full border-0 p-0 mt-1 bg-transparent focus:ring-0 text-sm">
+        </div>
+        <div class="bg-white border border-slate-200 rounded-2xl px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+            <label class="block text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Type</label>
+            <select id="filter-type" class="w-full border-0 p-0 mt-1 bg-transparent focus:ring-0 text-sm">
+                <option value="">All</option>
+                <option value="pg">PG</option>
+                <option value="hostel">Hostel</option>
+                <option value="flat">Flat</option>
+                <option value="co-living">Co-living</option>
+            </select>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-2xl px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+            <label class="block text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Furnishing</label>
+            <select id="filter-furnishing" class="w-full border-0 p-0 mt-1 bg-transparent focus:ring-0 text-sm">
+                <option value="">Any</option>
+                <option value="fully furnished">Fully Furnished</option>
+                <option value="semi furnished">Semi Furnished</option>
+                <option value="unfurnished">Unfurnished</option>
+            </select>
+        </div>
+        <div class="bg-white border border-slate-200 rounded-2xl px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+            <label class="block text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-300">Min Rating</label>
+            <select id="filter-rating" class="w-full border-0 p-0 mt-1 bg-transparent focus:ring-0 text-sm">
+                <option value="0">Any</option>
+                <option value="3">3+</option>
+                <option value="4">4+</option>
+                <option value="4.5">4.5+</option>
+            </select>
+        </div>
+    </section>
+
     <section class="mt-10">
         <div class="flex items-center justify-between mb-5">
             <h3 class="font-display text-2xl">Stays In Noida</h3>
@@ -265,7 +310,11 @@ function listingSpecText($row)
                 <?php while ($row = $result->fetch_assoc()) { ?>
                     <article
                         class="group rounded-3xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-lg hover:-translate-y-1 transition duration-300 dark:bg-slate-900 dark:border-slate-800 cursor-pointer snap-start"
-                        data-search="<?php echo htmlspecialchars(strtolower($row['title'] . ' ' . $row['sector'] . ' ' . ($row['type'] ?? '') . ' ' . ($row['seater_option'] ?? '') . ' ' . ($row['bhk_option'] ?? '') . ' ' . ($row['owner_name'] ?? '') . ' ' . ($row['description'] ?? '') . ' ' . ($row['amenities'] ?? '') . ' ' . ($row['phone'] ?? '') . ' ' . (string)($row['rent'] ?? ''))); ?>"
+                        data-search="<?php echo htmlspecialchars(strtolower($row['title'] . ' ' . $row['sector'] . ' ' . ($row['address_line'] ?? '') . ' ' . ($row['type'] ?? '') . ' ' . ($row['seater_option'] ?? '') . ' ' . ($row['bhk_option'] ?? '') . ' ' . ($row['furnishing'] ?? '') . ' ' . ($row['owner_name'] ?? '') . ' ' . ($row['description'] ?? '') . ' ' . ($row['amenities'] ?? '') . ' ' . ($row['phone'] ?? '') . ' ' . (string)($row['rent'] ?? ''))); ?>"
+                        data-rent="<?php echo (int)($row['rent'] ?? 0); ?>"
+                        data-type="<?php echo htmlspecialchars(strtolower((string)($row['type'] ?? ''))); ?>"
+                        data-rating="<?php echo htmlspecialchars((string)((float)($row['avg_rating'] ?? 0))); ?>"
+                        data-furnishing="<?php echo htmlspecialchars(strtolower((string)($row['furnishing'] ?? ''))); ?>"
                         data-url="property.php?id=<?php echo (int)$row['id']; ?>"
                         tabindex="0"
                         role="link"
@@ -277,6 +326,8 @@ function listingSpecText($row)
                                 src="uploads/<?php echo htmlspecialchars($row['image']); ?>"
                                 alt="<?php echo htmlspecialchars($row['title']); ?>"
                                 class="w-full h-60 object-cover"
+                                loading="lazy"
+                                decoding="async"
                             >
                             <span class="absolute top-3 left-3 px-3 py-1 text-xs font-semibold rounded-full bg-white/90 text-slate-800">Guest Favorite</span>
                         </div>
@@ -290,6 +341,9 @@ function listingSpecText($row)
                                         <?php if ($specText !== "") { ?>
                                             · <?php echo htmlspecialchars($specText); ?>
                                         <?php } ?>
+                                        <?php if (!empty($row['furnishing'])) { ?>
+                                            · <?php echo htmlspecialchars((string)$row['furnishing']); ?>
+                                        <?php } ?>
                                     </p>
                                     <?php if ($specText !== "") { ?>
                                         <p class="mt-2">
@@ -298,6 +352,13 @@ function listingSpecText($row)
                                             </span>
                                         </p>
                                     <?php } ?>
+                                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-300">
+                                        <?php if (!empty($row['available_from'])) { ?>
+                                            Available from <?php echo htmlspecialchars((string)$row['available_from']); ?>
+                                        <?php } else { ?>
+                                            Available now
+                                        <?php } ?>
+                                    </p>
                                 </div>
                                 <p class="text-sm font-semibold whitespace-nowrap">Rs <?php echo (int)$row['rent']; ?>/mo</p>
                             </div>
@@ -377,6 +438,11 @@ window.addEventListener("load", function () {
     const homeSearchInput = document.getElementById("home-search-input");
     const navSearchInput = document.getElementById("nav-search-input");
     const stickySearchWrap = document.getElementById("sticky-search-wrap");
+    const filterMinRent = document.getElementById("filter-min-rent");
+    const filterMaxRent = document.getElementById("filter-max-rent");
+    const filterType = document.getElementById("filter-type");
+    const filterFurnishing = document.getElementById("filter-furnishing");
+    const filterRating = document.getElementById("filter-rating");
     const homeCards = Array.from(document.querySelectorAll("#listing-content article[data-search]"));
     const homeNoResults = document.getElementById("client-no-results");
     let homeSearchTimer = null;
@@ -385,11 +451,26 @@ window.addEventListener("load", function () {
     function applyHomeFilter() {
         if (!homeSearchInput || homeCards.length === 0) return;
         const value = homeSearchInput.value.trim().toLowerCase();
+        const minRent = filterMinRent && filterMinRent.value !== "" ? parseInt(filterMinRent.value, 10) : null;
+        const maxRent = filterMaxRent && filterMaxRent.value !== "" ? parseInt(filterMaxRent.value, 10) : null;
+        const type = filterType ? filterType.value.trim().toLowerCase() : "";
+        const furnishing = filterFurnishing ? filterFurnishing.value.trim().toLowerCase() : "";
+        const minRating = filterRating ? parseFloat(filterRating.value || "0") : 0;
         let visible = 0;
 
         homeCards.forEach(function (card) {
             const searchable = card.getAttribute("data-search") || "";
-            const matched = value === "" || searchable.includes(value);
+            const rent = parseInt(card.getAttribute("data-rent") || "0", 10);
+            const cardType = (card.getAttribute("data-type") || "").toLowerCase();
+            const rating = parseFloat(card.getAttribute("data-rating") || "0");
+            const cardFurnishing = (card.getAttribute("data-furnishing") || "").toLowerCase();
+            const matchedText = value === "" || searchable.includes(value);
+            const matchedMin = minRent === null || rent >= minRent;
+            const matchedMax = maxRent === null || rent <= maxRent;
+            const matchedType = type === "" || cardType.includes(type);
+            const matchedFurnishing = furnishing === "" || cardFurnishing.includes(furnishing);
+            const matchedRating = rating >= minRating;
+            const matched = matchedText && matchedMin && matchedMax && matchedType && matchedFurnishing && matchedRating;
             card.classList.toggle("hidden", !matched);
             if (matched) visible++;
         });
@@ -439,6 +520,11 @@ window.addEventListener("load", function () {
             }, 350);
         });
     }
+    [filterMinRent, filterMaxRent, filterType, filterFurnishing, filterRating].forEach(function (el) {
+        if (!el) return;
+        el.addEventListener("input", applyHomeFilter);
+        el.addEventListener("change", applyHomeFilter);
+    });
 
     syncSearchInputs("home", homeSearchInput ? homeSearchInput.value : "");
     window.addEventListener("scroll", toggleStickySearch);

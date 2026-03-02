@@ -55,6 +55,28 @@ if ($feedbackRes) {
 }
 $feedbackStmt->close();
 
+$inquiryTotal = 0;
+$inquiryCountStmt = $conn->prepare("SELECT COUNT(*) AS total FROM property_inquiries WHERE owner_user_id=?");
+$inquiryCountStmt->bind_param("i", $ownerId);
+$inquiryCountStmt->execute();
+$inquiryCountRes = $inquiryCountStmt->get_result();
+if ($inquiryCountRes) {
+    $inquiryTotal = (int)($inquiryCountRes->fetch_assoc()["total"] ?? 0);
+}
+$inquiryCountStmt->close();
+
+$recentInquiryStmt = $conn->prepare("
+    SELECT name, email, phone, message, created_at, property_id
+    FROM property_inquiries
+    WHERE owner_user_id=?
+    ORDER BY id DESC
+    LIMIT 8
+");
+$recentInquiryStmt->bind_param("i", $ownerId);
+$recentInquiryStmt->execute();
+$recentInquiries = $recentInquiryStmt->get_result();
+$recentInquiryStmt->close();
+
 $recentFeedbackStmt = $conn->prepare("
     SELECT
         lf.comment,
@@ -131,6 +153,7 @@ $recentFeedbackStmt->close();
                     <span id="theme-toggle-label">Dark</span>
                 </button>
                 <a href="owner-profile.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Profile</a>
+                <a href="owner-analytics.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Analytics</a>
                 <a href="add-property.php" class="px-3 py-2 rounded-full bg-slate-900 text-white">Add Property</a>
                 <a href="index.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Home</a>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Logout</a>
@@ -144,7 +167,7 @@ $recentFeedbackStmt->close();
                 Listing updated and sent to admin for reapproval.
             </div>
         <?php } ?>
-        <section class="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <section class="grid sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
             <div class="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
                 <p class="text-xs text-slate-500 dark:text-slate-300 uppercase tracking-[0.16em]">Total</p>
                 <p class="text-3xl font-display mt-2"><?php echo $totalCount; ?></p>
@@ -164,6 +187,10 @@ $recentFeedbackStmt->close();
             <div class="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
                 <p class="text-xs text-slate-500 dark:text-slate-300 uppercase tracking-[0.16em]">Feedback</p>
                 <p class="text-3xl font-display mt-2 text-cyan-600"><?php echo $feedbackTotal; ?></p>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+                <p class="text-xs text-slate-500 dark:text-slate-300 uppercase tracking-[0.16em]">Inquiries</p>
+                <p class="text-3xl font-display mt-2 text-indigo-600"><?php echo $inquiryTotal; ?></p>
             </div>
         </section>
 
@@ -274,6 +301,25 @@ $recentFeedbackStmt->close();
                     <?php } ?>
                 <?php } else { ?>
                     <p class="text-sm text-slate-500 dark:text-slate-300">No feedback received yet.</p>
+                <?php } ?>
+            </div>
+        </section>
+
+        <section class="mt-6 bg-white border border-slate-200 rounded-3xl p-5 dark:bg-slate-900 dark:border-slate-800">
+            <h2 class="font-display text-xl">Recent Inquiries</h2>
+            <div class="mt-4 space-y-3">
+                <?php if ($recentInquiries && $recentInquiries->num_rows > 0) { ?>
+                    <?php while ($inq = $recentInquiries->fetch_assoc()) { ?>
+                        <article class="rounded-xl border border-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                            <p class="text-sm font-semibold"><?php echo htmlspecialchars((string)$inq["name"]); ?> · Listing #<?php echo (int)$inq["property_id"]; ?></p>
+                            <?php if (!empty($inq["email"])) { ?><p class="text-xs text-slate-500"><?php echo htmlspecialchars((string)$inq["email"]); ?></p><?php } ?>
+                            <?php if (!empty($inq["phone"])) { ?><p class="text-xs text-slate-500"><?php echo htmlspecialchars((string)$inq["phone"]); ?></p><?php } ?>
+                            <p class="mt-1 text-sm text-slate-700 dark:text-slate-200"><?php echo nl2br(htmlspecialchars((string)$inq["message"])); ?></p>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-300"><?php echo htmlspecialchars((string)$inq["created_at"]); ?></p>
+                        </article>
+                    <?php } ?>
+                <?php } else { ?>
+                    <p class="text-sm text-slate-500 dark:text-slate-300">No inquiries yet.</p>
                 <?php } ?>
             </div>
         </section>
