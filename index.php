@@ -1,61 +1,69 @@
 <?php
 session_start();
 include "db.php";
-$result = $conn->query("SELECT * FROM properties");
-if(isset($_GET['sector']) && $_GET['sector'] != ""){
 
-    $sector = "%" . $_GET['sector'] . "%";
-
-    $stmt = $conn->prepare("SELECT * FROM properties WHERE sector LIKE ?");
-    $stmt->bind_param("s", $sector);
-    $stmt->execute();
-
-    $result = $stmt->get_result();
-
-} else {
-    $result = $conn->query("SELECT * FROM properties");
-}
+$result = $conn->query("SELECT * FROM properties WHERE status='approved'");
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
     <title>Nestoida</title>
-    <link rel="stylesheet" href="assets/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-50">
 
-<div class="navbar">
-    Nestoida – PG & Flats in Noida
-    <form method="GET" style="margin-top:10px;">
-    <input type="text" name="sector" placeholder="Search by sector..." style="padding:8px;">
-    <button type="submit" style="padding:8px;">Search</button>
-</form>
+<!-- Navbar -->
+<div class="bg-white border-b">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+        <h1 class="text-xl font-semibold">Nestoida</h1>
+        <a href="submit-property.php" class="text-sm bg-black text-white px-4 py-2 rounded">
+            List Your PG
+        </a>
+    </div>
 </div>
 
-<div class="container">
-    <div class="grid">
+<!-- Search -->
+<div class="max-w-6xl mx-auto px-6 mt-8">
+    <form method="GET" class="flex gap-3">
+        <input type="text" name="sector"
+               placeholder="Search by sector..."
+               class="flex-1 border rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black">
+        <button class="bg-black text-white px-6 py-2 rounded">
+            Search
+        </button>
+    </form>
+</div>
+
+<!-- Grid -->
+<div class="max-w-6xl mx-auto px-6 mt-10 grid md:grid-cols-3 gap-8">
 
 <?php while($row = $result->fetch_assoc()) { ?>
-    <div class="card">
-        <img src="uploads/<?php echo $row['image']; ?>">
-        <div class="card-body">
-            <div class="card-title"><?php echo $row['title']; ?></div>
-            <div class="price">₹<?php echo $row['rent']; ?></div>
-            <div>Sector <?php echo $row['sector']; ?></div>
-            <a class="button" href="property.php?id=<?php echo $row['id']; ?>">View Details</a>
-            <?php if(isset($_SESSION['admin'])) { ?>
-    <a class="button" href="edit-property.php?id=<?php echo $row['id']; ?>" style="background:#16a34a;">Edit</a>
-    <a class="button" href="delete-property.php?id=<?php echo $row['id']; ?>" 
-       style="background:#dc2626;"
-       onclick="return confirm('Are you sure?');">
-       Delete
-    </a>
-<?php } ?>
+    <div class="bg-white rounded-xl shadow-sm hover:shadow-md transition">
+        <img src="uploads/<?php echo $row['image']; ?>"
+             class="w-full h-56 object-cover rounded-t-xl">
+
+        <div class="p-5">
+            <h2 class="text-lg font-semibold">
+                <?php echo $row['title']; ?>
+            </h2>
+
+            <p class="text-gray-600 mt-1">
+                Sector <?php echo $row['sector']; ?>
+            </p>
+
+            <p class="text-black font-medium mt-2">
+                ₹<?php echo $row['rent']; ?> / month
+            </p>
+
+            <a href="property.php?id=<?php echo $row['id']; ?>"
+               class="inline-block mt-4 text-sm bg-black text-white px-4 py-2 rounded">
+               View Details
+            </a>
         </div>
     </div>
 <?php } ?>
-</div>
+
 </div>
 
 </body>

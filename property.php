@@ -10,7 +10,8 @@ $row = $result->fetch_assoc();
 <html>
 <head>
     <title><?php echo $row['title']; ?></title>
-    <link rel="stylesheet" href="assets/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- <link rel="stylesheet" href="assets/css/style.css"> -->
 </head>
 <body>
 
