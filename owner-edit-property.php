@@ -2,70 +2,147 @@
 session_start();
 include "db.php";
 
-if (!isset($_SESSION['admin'])) {
-    header("Location: login.php");
+if (!isset($_SESSION["user_id"], $_SESSION["user_role"]) || $_SESSION["user_role"] !== "owner") {
+    header("Location: user-login.php");
     exit();
 }
 
-$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-$result = $conn->query("SELECT p.*, p.TYPE AS type FROM properties p WHERE p.id=$id");
-$row = $result->fetch_assoc();
+$ownerId = (int)$_SESSION["user_id"];
+$id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
+
+if ($id <= 0) {
+    header("Location: owner-dashboard.php");
+    exit();
+}
+
+$error = "";
+
+function upload_error_message($code)
+{
+    switch ($code) {
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            return "Image is too large. Please upload a smaller file.";
+        case UPLOAD_ERR_PARTIAL:
+            return "Image upload was interrupted. Please try again.";
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return "Server upload temp folder is missing.";
+        case UPLOAD_ERR_CANT_WRITE:
+            return "Server cannot write uploaded file.";
+        case UPLOAD_ERR_EXTENSION:
+            return "Upload blocked by server extension.";
+        default:
+            return "Image upload failed.";
+    }
+}
+
+$stmt = $conn->prepare("SELECT p.*, p.TYPE AS type FROM properties p WHERE p.id=? AND p.owner_user_id=? LIMIT 1");
+$stmt->bind_param("ii", $id, $ownerId);
+$stmt->execute();
+$result = $stmt->get_result();
+$row = $result ? $result->fetch_assoc() : null;
+$stmt->close();
 
 if (!$row) {
-    header("Location: dashboard.php");
+    header("Location: owner-dashboard.php");
     exit();
 }
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $title = $_POST['title'];
-    $type = trim($_POST['type']);
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $title = trim($_POST["title"] ?? "");
+    $type = trim($_POST["type"] ?? "");
     $typeLower = strtolower($type);
-    $rent = $_POST['rent'];
-    $sector = $_POST['sector'];
-    $description = $_POST['description'];
-    $amenities = $_POST['amenities'];
-    $phone = $_POST['phone'];
+    $rent = isset($_POST["rent"]) ? (int)$_POST["rent"] : 0;
+    $sector = trim($_POST["sector"] ?? "");
+    $description = trim($_POST["description"] ?? "");
+    $amenities = trim($_POST["amenities"] ?? "");
+    $phone = trim($_POST["phone"] ?? "");
     $seaterOption = in_array($typeLower, ['pg', 'hostel'], true) ? trim($_POST['seater_option'] ?? '') : '';
     $bhkOption = in_array($typeLower, ['flat', 'apartment'], true) ? trim($_POST['bhk_option'] ?? '') : '';
 
-    $stmt = $conn->prepare("UPDATE properties SET
-        title=?,
-        type=?,
-        seater_option=?,
-        bhk_option=?,
-        rent=?,
-        sector=?,
-        description=?,
-        amenities=?,
-        phone=?
-        WHERE id=?");
+    if ($title === "" || $type === "" || $sector === "" || $phone === "" || $rent <= 0) {
+        $error = "Please fill all required fields with valid details.";
+    }
+    if ($error === "" && $seaterOption === '' && in_array($typeLower, ['pg', 'hostel'], true)) {
+        $error = "Please choose seater option for PG/Hostel.";
+    }
+    if ($error === "" && $bhkOption === '' && in_array($typeLower, ['flat', 'apartment'], true)) {
+        $error = "Please choose BHK option for Flat.";
+    }
 
-    $stmt->bind_param(
-        "ssssissssi",
-        $title,
-        $type,
-        $seaterOption,
-        $bhkOption,
-        $rent,
-        $sector,
-        $description,
-        $amenities,
-        $phone,
-        $id
-    );
+    $imageName = $row["image"];
+    $image = $_FILES["image"] ?? null;
 
-    $stmt->execute();
-    header("Location: dashboard.php");
-    exit();
+    if ($error === "" && $image && isset($image["error"]) && (int)$image["error"] !== UPLOAD_ERR_NO_FILE) {
+        $allowedMimeTypes = ["image/jpeg", "image/png"];
+        if ((int)$image["error"] !== UPLOAD_ERR_OK) {
+            $error = upload_error_message((int)$image["error"]);
+        } elseif (!is_uploaded_file($image["tmp_name"])) {
+            $error = "Invalid uploaded file.";
+        } else {
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $detectedMime = $finfo->file($image["tmp_name"]);
+            if (!in_array($detectedMime, $allowedMimeTypes, true)) {
+                $error = "Only JPG and PNG images are allowed.";
+            } else {
+                $extensionMap = [
+                    "image/jpeg" => "jpg",
+                    "image/png" => "png"
+                ];
+                $uploadDir = __DIR__ . "/uploads";
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+                    $error = "Upload folder could not be created.";
+                } elseif (!is_writable($uploadDir)) {
+                    $error = "Upload folder is not writable.";
+                } else {
+                    $extension = $extensionMap[$detectedMime] ?? "jpg";
+                    $imageName = "property_" . date("Ymd_His") . "_" . bin2hex(random_bytes(5)) . "." . $extension;
+                    $destinationPath = $uploadDir . "/" . $imageName;
+                    if (!move_uploaded_file($image["tmp_name"], $destinationPath)) {
+                        $error = "Image upload failed. Please check folder permissions.";
+                    }
+                }
+            }
+        }
+    }
+
+    if ($error === "") {
+        $status = "pending";
+        $updateStmt = $conn->prepare("UPDATE properties SET title=?, type=?, seater_option=?, bhk_option=?, rent=?, sector=?, description=?, amenities=?, phone=?, image=?, status=? WHERE id=? AND owner_user_id=?");
+        $updateStmt->bind_param(
+            "ssssissssssii",
+            $title,
+            $type,
+            $seaterOption,
+            $bhkOption,
+            $rent,
+            $sector,
+            $description,
+            $amenities,
+            $phone,
+            $imageName,
+            $status,
+            $id,
+            $ownerId
+        );
+        $updateStmt->execute();
+        $updatedRows = $updateStmt->affected_rows;
+        $updateStmt->close();
+
+        if ($updatedRows >= 0) {
+            header("Location: owner-dashboard.php?updated=1");
+            exit();
+        }
+        $error = "Unable to update listing right now.";
+    }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Property - Nestoida</title>
+    <title>Edit Listing - Nestoida</title>
     <script>
         (function () {
             try {
@@ -78,12 +155,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            darkMode: 'class',
+            darkMode: "class",
             theme: {
                 extend: {
                     fontFamily: {
-                        display: ['"Space Grotesk"', 'sans-serif'],
-                        body: ['"Manrope"', 'sans-serif']
+                        display: ['"Space Grotesk"', "sans-serif"],
+                        body: ['"Manrope"', "sans-serif"]
                     }
                 }
             }
@@ -99,24 +176,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <header class="sticky top-0 z-40 backdrop-blur bg-white/85 border-b border-slate-200 dark:bg-slate-950/80 dark:border-slate-800">
         <div class="max-w-4xl mx-auto px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h1 class="font-display text-2xl">Edit Property</h1>
-                <p class="text-xs text-slate-500 dark:text-slate-300">Update listing details with confidence</p>
+                <h1 class="font-display text-2xl">Edit Listing</h1>
+                <p class="text-xs text-slate-500 dark:text-slate-300">Any update will be sent to admin for reapproval.</p>
             </div>
             <div class="flex gap-2 text-sm">
                 <button id="theme-toggle" type="button" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
                     <span id="theme-toggle-label">Dark</span>
                 </button>
-                <a href="dashboard.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Dashboard</a>
+                <a href="owner-dashboard.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Owner Dashboard</a>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Logout</a>
             </div>
         </div>
     </header>
 
     <main class="max-w-4xl mx-auto px-6 py-8">
-        <form method="POST" class="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5 dark:bg-slate-900 dark:border-slate-800">
+        <?php if ($error !== "") { ?>
+            <div class="mb-4 border border-rose-200 bg-rose-50 text-rose-700 rounded-xl p-3 text-sm"><?php echo htmlspecialchars($error); ?></div>
+        <?php } ?>
+
+        <form method="POST" enctype="multipart/form-data" class="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5 dark:bg-slate-900 dark:border-slate-800">
             <div>
                 <label class="block text-sm font-semibold mb-1">Property Title</label>
-                <input type="text" name="title" value="<?php echo htmlspecialchars($row['title']); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
+                <input type="text" name="title" value="<?php echo htmlspecialchars($row["title"]); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
             </div>
 
             <div class="grid md:grid-cols-2 gap-4">
@@ -124,7 +205,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <label class="block text-sm font-semibold mb-1">Type</label>
                     <select id="type" name="type" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
                         <?php
-                        $typeValue = strtolower((string)$row['type']);
+                        $typeValue = strtolower((string)$row["type"]);
                         $typeOptions = ["PG", "Hostel", "Flat", "Co-living"];
                         foreach ($typeOptions as $opt) {
                             $selected = $typeValue === strtolower($opt) ? "selected" : "";
@@ -135,7 +216,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Monthly Rent</label>
-                    <input type="number" name="rent" value="<?php echo (int)$row['rent']; ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
+                    <input type="number" name="rent" value="<?php echo (int)$row["rent"]; ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
                 </div>
             </div>
 
@@ -173,27 +254,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="grid md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-semibold mb-1">Sector</label>
-                    <input type="text" name="sector" value="<?php echo htmlspecialchars($row['sector']); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
+                    <input type="text" name="sector" value="<?php echo htmlspecialchars($row["sector"]); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Contact Phone</label>
-                    <input type="text" name="phone" value="<?php echo htmlspecialchars($row['phone']); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
+                    <input type="text" name="phone" value="<?php echo htmlspecialchars($row["phone"]); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>
                 </div>
             </div>
 
             <div>
                 <label class="block text-sm font-semibold mb-1">Description</label>
-                <textarea name="description" rows="4" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"><?php echo htmlspecialchars($row['description']); ?></textarea>
+                <textarea name="description" rows="4" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"><?php echo htmlspecialchars($row["description"]); ?></textarea>
             </div>
 
             <div>
                 <label class="block text-sm font-semibold mb-1">Amenities</label>
-                <textarea name="amenities" rows="3" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"><?php echo htmlspecialchars($row['amenities']); ?></textarea>
+                <textarea name="amenities" rows="3" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700"><?php echo htmlspecialchars($row["amenities"]); ?></textarea>
             </div>
 
-            <button type="submit" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-cyan-700 transition">Update Property</button>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Replace Listing Image (optional)</label>
+                <input type="file" name="image" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600 dark:bg-slate-900 dark:border-slate-700">
+                <p class="text-xs text-slate-500 dark:text-slate-300 mt-1">Leave blank to keep current image.</p>
+            </div>
+
+            <button type="submit" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-cyan-700 transition">Save and Send for Reapproval</button>
         </form>
     </main>
+
     <script>
         (function () {
             const btn = document.getElementById("theme-toggle");

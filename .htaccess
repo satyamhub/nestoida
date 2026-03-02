@@ -1,1 +1,16 @@
 Options -Indexes
+
+# Gmail SMTP configuration for verification/reset emails.
+# Replace values below with your Nestoida Gmail + App Password.
+SetEnv SMTP_HOST smtp.gmail.com
+SetEnv SMTP_PORT 587
+SetEnv SMTP_SECURE tls
+SetEnv SMTP_USER nestoida.home@gmail.com
+SetEnv SMTP_PASS smqrnabhhvaevpct
+SetEnv SMTP_FROM_EMAIL nestoida.home@gmail.com
+SetEnv SMTP_FROM_NAME Nestoida
+SetEnv VERIFICATION_TOKEN_TTL_SECONDS 86400
+
+
+# Base URL used to build verification/reset links.
+SetEnv APP_URL http://localhost/nestoida
