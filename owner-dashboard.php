@@ -12,7 +12,7 @@ $updated = isset($_GET["updated"]) && $_GET["updated"] === "1";
 
 $stmt = $conn->prepare("
     SELECT
-        p.id, p.title, p.type, p.seater_option, p.bhk_option, p.sector, p.rent, p.status, p.created_at,
+        p.id, p.title, p.type, p.seater_option, p.bhk_option, p.sector, p.rent, p.status, p.created_at, p.updated_at,
         COALESCE(f.feedback_count, 0) AS feedback_count
     FROM properties p
     LEFT JOIN (
@@ -164,7 +164,7 @@ $recentFeedbackStmt->close();
     <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <?php if ($updated) { ?>
             <div class="mb-4 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-xl p-3 text-sm">
-                Listing updated and sent to admin for reapproval.
+                Listing updated successfully.
             </div>
         <?php } ?>
         <section class="grid sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
@@ -210,6 +210,7 @@ $recentFeedbackStmt->close();
                             <th class="text-left px-4 py-3">Status</th>
                             <th class="text-left px-4 py-3">Feedback</th>
                             <th class="text-left px-4 py-3">Created</th>
+                            <th class="text-left px-4 py-3">Updated</th>
                             <th class="text-left px-4 py-3">Actions</th>
                         </tr>
                     </thead>
@@ -246,6 +247,7 @@ $recentFeedbackStmt->close();
                                     </td>
                                     <td class="px-4 py-3"><?php echo (int)($row["feedback_count"] ?? 0); ?></td>
                                     <td class="px-4 py-3"><?php echo htmlspecialchars($row["created_at"]); ?></td>
+                                    <td class="px-4 py-3"><?php echo htmlspecialchars((string)($row["updated_at"] ?? "-")); ?></td>
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap gap-2">
                                             <a href="property.php?id=<?php echo (int)$row["id"]; ?>" target="_blank" rel="noopener" class="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
@@ -254,13 +256,16 @@ $recentFeedbackStmt->close();
                                             <a href="owner-edit-property.php?id=<?php echo (int)$row["id"]; ?>" class="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
                                                 Edit
                                             </a>
+                                            <a href="listing-history.php?id=<?php echo (int)$row["id"]; ?>" class="inline-flex items-center px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
+                                                History
+                                            </a>
                                         </div>
                                     </td>
                                 </tr>
                             <?php } ?>
                         <?php } else { ?>
                             <tr>
-                                <td colspan="8" class="px-4 py-8 text-center text-slate-500 dark:text-slate-300">No listings yet. Add your first property.</td>
+                                <td colspan="9" class="px-4 py-8 text-center text-slate-500 dark:text-slate-300">No listings yet. Add your first property.</td>
                             </tr>
                         <?php } ?>
                     </tbody>

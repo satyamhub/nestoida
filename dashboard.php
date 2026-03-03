@@ -7,10 +7,57 @@ if (!isset($_SESSION['admin'])) {
     exit();
 }
 
+$adminUsername = (string)$_SESSION['admin'];
+$adminId = 0;
+$adminStmt = $conn->prepare("SELECT id FROM admin WHERE username=? LIMIT 1");
+if ($adminStmt) {
+    $adminStmt->bind_param("s", $adminUsername);
+    $adminStmt->execute();
+    $adminRes = $adminStmt->get_result();
+    $adminRow = $adminRes ? $adminRes->fetch_assoc() : null;
+    $adminId = $adminRow ? (int)$adminRow["id"] : 0;
+    $adminStmt->close();
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["mark_notifications_read"])) {
+    if ($adminId > 0) {
+        $markStmt = $conn->prepare("UPDATE admin_notifications SET is_read=1 WHERE admin_id=?");
+        if ($markStmt) {
+            $markStmt->bind_param("i", $adminId);
+            $markStmt->execute();
+            $markStmt->close();
+        }
+    }
+    header("Location: dashboard.php");
+    exit();
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["mark_notification_read"], $_POST["notification_id"])) {
+    if ($adminId > 0) {
+        $noteId = (int)$_POST["notification_id"];
+        if ($noteId > 0) {
+            $markOneStmt = $conn->prepare("UPDATE admin_notifications SET is_read=1 WHERE id=? AND admin_id=?");
+            if ($markOneStmt) {
+                $markOneStmt->bind_param("ii", $noteId, $adminId);
+                $markOneStmt->execute();
+                $markOneStmt->close();
+            }
+        }
+    }
+    header("Location: dashboard.php");
+    exit();
+}
+
 $allowedStatusFilters = ["all", "approved", "pending", "rejected", "reported"];
 $filterStatus = isset($_GET["status"]) ? strtolower(trim($_GET["status"])) : "all";
 if (!in_array($filterStatus, $allowedStatusFilters, true)) {
     $filterStatus = "all";
+}
+
+$allowedNotificationFilters = ["all", "unread"];
+$notificationFilter = isset($_GET["notifications"]) ? strtolower(trim($_GET["notifications"])) : "all";
+if (!in_array($notificationFilter, $allowedNotificationFilters, true)) {
+    $notificationFilter = "all";
 }
 
 $search = isset($_GET["search"]) ? trim($_GET["search"]) : "";
@@ -190,6 +237,33 @@ $pending = $pendingResult ? (int)$pendingResult->fetch_assoc()["total"] : 0;
 $rejected = $rejectedResult ? (int)$rejectedResult->fetch_assoc()["total"] : 0;
 $reported = $reportedResult ? (int)$reportedResult->fetch_assoc()["total"] : 0;
 
+$adminNotifications = null;
+$adminUnread = 0;
+if ($adminId > 0) {
+    $notifWhere = $notificationFilter === "unread" ? " AND is_read=0" : "";
+    $notifStmt = $conn->prepare("
+        SELECT id, title, message, url, is_read, created_at
+        FROM admin_notifications
+        WHERE admin_id=?{$notifWhere}
+        ORDER BY id DESC
+        LIMIT 8
+    ");
+    if ($notifStmt) {
+        $notifStmt->bind_param("i", $adminId);
+        $notifStmt->execute();
+        $adminNotifications = $notifStmt->get_result();
+        $notifStmt->close();
+    }
+    $unreadStmt = $conn->prepare("SELECT COUNT(*) AS total FROM admin_notifications WHERE admin_id=? AND is_read=0");
+    if ($unreadStmt) {
+        $unreadStmt->bind_param("i", $adminId);
+        $unreadStmt->execute();
+        $unreadRes = $unreadStmt->get_result();
+        $adminUnread = $unreadRes ? (int)($unreadRes->fetch_assoc()["total"] ?? 0) : 0;
+        $unreadStmt->close();
+    }
+}
+
 function buildDashboardQuery($search, $status, $page)
 {
     return http_build_query([
@@ -334,6 +408,64 @@ function renderStars($avgRating)
             </div>
         </section>
 
+        <section class="mt-6 bg-white border border-slate-200 rounded-3xl p-5 dark:bg-slate-900 dark:border-slate-800">
+            <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <h2 class="font-display text-xl">Admin Notifications</h2>
+                    <span id="notif-badge" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-200 text-emerald-700 bg-emerald-50 <?php echo $adminUnread > 0 ? '' : 'hidden'; ?>">
+                        <?php echo (int)$adminUnread; ?>
+                    </span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <form method="GET">
+                        <input type="hidden" name="status" value="<?php echo htmlspecialchars($filterStatus); ?>">
+                        <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+                        <input type="hidden" name="page" value="<?php echo (int)$page; ?>">
+                        <select id="notifications-filter" name="notifications" class="border border-slate-300 rounded-full px-3 py-1.5 text-sm">
+                            <option value="all" <?php echo $notificationFilter === "all" ? "selected" : ""; ?>>All</option>
+                            <option value="unread" <?php echo $notificationFilter === "unread" ? "selected" : ""; ?>>Unread</option>
+                        </select>
+                    </form>
+                    <form method="POST">
+                        <button type="submit" name="mark_notifications_read" value="1" class="px-3 py-2 rounded-full border border-slate-300 text-sm">
+                            Mark all read<?php echo $adminUnread > 0 ? " (" . $adminUnread . ")" : ""; ?>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div id="notifications-list" class="mt-4 space-y-3">
+                <?php if ($adminNotifications && $adminNotifications->num_rows > 0) { ?>
+                    <?php while ($note = $adminNotifications->fetch_assoc()) { ?>
+                        <article class="rounded-xl border border-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
+                            <div class="flex items-center justify-between gap-2">
+                                <p class="text-sm font-semibold">
+                                    <?php echo htmlspecialchars((string)$note["title"]); ?>
+                                    <?php if ((int)$note["is_read"] === 0) { ?>
+                                        <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-200 text-emerald-700 bg-emerald-50">New</span>
+                                    <?php } ?>
+                                </p>
+                                <p class="text-xs text-slate-500"><?php echo htmlspecialchars((string)$note["created_at"]); ?></p>
+                            </div>
+                            <p class="mt-1 text-sm text-slate-700 dark:text-slate-200"><?php echo htmlspecialchars((string)$note["message"]); ?></p>
+                            <div class="mt-2 flex items-center gap-3">
+                                <?php if (!empty($note["url"])) { ?>
+                                    <a class="inline-flex text-xs text-cyan-700 dark:text-cyan-300" href="<?php echo htmlspecialchars((string)$note["url"]); ?>">Open</a>
+                                <?php } ?>
+                                <?php if ((int)$note["is_read"] === 0) { ?>
+                                    <form method="POST">
+                                        <input type="hidden" name="notification_id" value="<?php echo (int)$note["id"]; ?>">
+                                        <button type="submit" name="mark_notification_read" value="1" class="text-xs text-slate-600 underline">Mark read</button>
+                                    </form>
+                                <?php } ?>
+                            </div>
+                        </article>
+                    <?php } ?>
+                <?php } else { ?>
+                    <p class="text-sm text-slate-500 dark:text-slate-300">No notifications yet.</p>
+                <?php } ?>
+            </div>
+        </section>
+
         <section class="bg-white border border-slate-200 rounded-3xl mt-8 overflow-hidden shadow-sm dark:bg-slate-900 dark:border-slate-800">
             <div class="px-5 py-4 border-b border-slate-200 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between dark:border-slate-800">
                 <h2 class="font-display text-xl">Manage Properties</h2>
@@ -380,6 +512,7 @@ function renderStars($avgRating)
                                 <th class="text-left px-4 py-3">Rating</th>
                                 <th class="text-left px-4 py-3">Status</th>
                                 <th class="text-left px-4 py-3">Reports</th>
+                                <th class="text-left px-4 py-3">Updated</th>
                                 <th class="text-left px-4 py-3">Actions</th>
                             </tr>
                         </thead>
@@ -446,10 +579,12 @@ function renderStars($avgRating)
                                             <?php echo (int)$row['report_count']; ?>
                                         </span>
                                     </td>
+                                    <td class="px-4 py-3 text-slate-500"><?php echo htmlspecialchars((string)($row['updated_at'] ?? "-")); ?></td>
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap gap-2">
                                             <a href="property.php?id=<?php echo (int)$row['id']; ?>" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">View</a>
                                             <a href="edit-property.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Edit</a>
+                                            <a href="listing-history.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">History</a>
                                             <form method="POST" class="inline">
                                                 <input type="hidden" name="id" value="<?php echo (int)$row["id"]; ?>">
                                                 <input type="hidden" name="action" value="approve">
@@ -471,14 +606,14 @@ function renderStars($avgRating)
                                 </tr>
                             <?php } ?>
                             <tr id="client-empty-row" class="hidden">
-                                <td colspan="9" class="px-4 py-10 text-center">
+                                <td colspan="10" class="px-4 py-10 text-center">
                                     <p class="font-display text-xl">No matching properties on this page</p>
                                     <p class="text-slate-500 dark:text-slate-300 mt-1">Try another search or status filter.</p>
                                 </td>
                             </tr>
                         <?php } else { ?>
                             <tr>
-                                <td colspan="9" class="px-4 py-12 text-center">
+                                <td colspan="10" class="px-4 py-12 text-center">
                                     <p class="font-display text-xl">No properties found</p>
                                     <p class="text-slate-500 dark:text-slate-300 mt-1">Try a different filter or search value.</p>
                                 </td>
@@ -573,6 +708,73 @@ function renderStars($avgRating)
             selectAll.checked = false;
         }
     }
+
+    (function () {
+        const badge = document.getElementById("notif-badge");
+        const markAllBtn = document.querySelector("button[name='mark_notifications_read']");
+        const listContainer = document.getElementById("notifications-list");
+        const filterSelect = document.getElementById("notifications-filter");
+        const currentFilter = filterSelect ? (filterSelect.value || "all") : "all";
+        function refreshNotificationBadge() {
+            fetch("admin-notifications-count.php", { credentials: "same-origin" })
+                .then((res) => res.ok ? res.json() : null)
+                .then((data) => {
+                    if (!data || typeof data.unread !== "number" || !badge) return;
+                    const count = data.unread;
+                    badge.textContent = String(count);
+                    badge.classList.toggle("hidden", count <= 0);
+                    if (markAllBtn) {
+                        markAllBtn.textContent = "Mark all read" + (count > 0 ? " (" + count + ")" : "");
+                    }
+                })
+                .catch(() => {});
+        }
+        function renderNotificationList(items) {
+            if (!listContainer) return;
+            if (!items || items.length === 0) {
+                listContainer.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-300">No notifications yet.</p>';
+                return;
+            }
+            const html = items.map((note) => {
+                const isRead = parseInt(note.is_read, 10) === 1;
+                const newBadge = isRead ? "" : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-200 text-emerald-700 bg-emerald-50">New</span>';
+                const openLink = note.url ? '<a class="inline-flex text-xs text-cyan-700 dark:text-cyan-300" href="' + note.url + '">Open</a>' : '';
+                const markRead = isRead ? '' : '<form method="POST"><input type="hidden" name="notification_id" value="' + note.id + '"><button type="submit" name="mark_notification_read" value="1" class="text-xs text-slate-600 underline">Mark read</button></form>';
+                return (
+                    '<article class="rounded-xl border border-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">' +
+                        '<div class="flex items-center justify-between gap-2">' +
+                            '<p class="text-sm font-semibold">' + note.title + newBadge + '</p>' +
+                            '<p class="text-xs text-slate-500">' + note.created_at + '</p>' +
+                        '</div>' +
+                        '<p class="mt-1 text-sm text-slate-700 dark:text-slate-200">' + note.message + '</p>' +
+                        '<div class="mt-2 flex items-center gap-3">' + openLink + markRead + '</div>' +
+                    '</article>'
+                );
+            }).join("");
+            listContainer.innerHTML = html;
+        }
+        function refreshNotificationList() {
+            const filter = filterSelect ? (filterSelect.value || "all") : currentFilter;
+            fetch("admin-notifications-list.php?filter=" + encodeURIComponent(filter), { credentials: "same-origin" })
+                .then((res) => res.ok ? res.json() : null)
+                .then((data) => {
+                    if (!data || !Array.isArray(data.items)) return;
+                    renderNotificationList(data.items);
+                })
+                .catch(() => {});
+        }
+        refreshNotificationBadge();
+        refreshNotificationList();
+        setInterval(function () {
+            refreshNotificationBadge();
+            refreshNotificationList();
+        }, 15000);
+        if (filterSelect) {
+            filterSelect.addEventListener("change", function () {
+                refreshNotificationList();
+            });
+        }
+    })();
 
     if (dashboardSearchInput && dashboardSearchForm) {
         dashboardSearchInput.addEventListener("input", function () {

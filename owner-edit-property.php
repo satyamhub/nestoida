@@ -48,6 +48,20 @@ if (!$row) {
     exit();
 }
 
+$existingImages = [];
+$existingImagesRes = $conn->prepare("SELECT id, image_name, is_cover, sort_order, label FROM property_images WHERE property_id=? ORDER BY is_cover DESC, sort_order ASC, id ASC");
+if ($existingImagesRes) {
+    $existingImagesRes->bind_param("i", $id);
+    $existingImagesRes->execute();
+    $resImgs = $existingImagesRes->get_result();
+    if ($resImgs) {
+        while ($imgRow = $resImgs->fetch_assoc()) {
+            $existingImages[] = $imgRow;
+        }
+    }
+    $existingImagesRes->close();
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $title = trim($_POST["title"] ?? "");
     $type = trim($_POST["type"] ?? "");
@@ -89,46 +103,141 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 
     $imageName = $row["image"];
-    $image = $_FILES["image"] ?? null;
+    $images = $_FILES["images"] ?? null;
+    $imagesToRemove = isset($_POST["remove_images"]) && is_array($_POST["remove_images"]) ? array_map("intval", $_POST["remove_images"]) : [];
+    $coverImageId = isset($_POST["cover_image_id"]) ? (int)$_POST["cover_image_id"] : 0;
+    $imageOrders = isset($_POST["image_order"]) && is_array($_POST["image_order"]) ? $_POST["image_order"] : [];
+    $imageLabels = isset($_POST["image_label"]) && is_array($_POST["image_label"]) ? $_POST["image_label"] : [];
+    $newImageLabelsRaw = trim((string)($_POST["new_image_labels"] ?? ""));
+    $newImageLabels = $newImageLabelsRaw !== '' ? preg_split('/\r\n|\r|\n/', $newImageLabelsRaw) : [];
+    $newImageNames = [];
 
-    if ($error === "" && $image && isset($image["error"]) && (int)$image["error"] !== UPLOAD_ERR_NO_FILE) {
-        $allowedMimeTypes = ["image/jpeg", "image/png"];
-        if ((int)$image["error"] !== UPLOAD_ERR_OK) {
-            $error = upload_error_message((int)$image["error"]);
-        } elseif (!is_uploaded_file($image["tmp_name"])) {
-            $error = "Invalid uploaded file.";
-        } else {
-            $finfo = new finfo(FILEINFO_MIME_TYPE);
-            $detectedMime = $finfo->file($image["tmp_name"]);
-            if (!in_array($detectedMime, $allowedMimeTypes, true)) {
-                $error = "Only JPG and PNG images are allowed.";
-            } else {
-                $extensionMap = [
-                    "image/jpeg" => "jpg",
-                    "image/png" => "png"
-                ];
-                $uploadDir = __DIR__ . "/uploads";
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-                    $error = "Upload folder could not be created.";
-                } elseif (!is_writable($uploadDir)) {
-                    $error = "Upload folder is not writable.";
-                } else {
-                    $extension = $extensionMap[$detectedMime] ?? "jpg";
-                    $imageName = "property_" . date("Ymd_His") . "_" . bin2hex(random_bytes(5)) . "." . $extension;
-                    $destinationPath = $uploadDir . "/" . $imageName;
-                    if (!move_uploaded_file($image["tmp_name"], $destinationPath)) {
-                        $error = "Image upload failed. Please check folder permissions.";
+    if ($error === "" && !empty($imagesToRemove)) {
+        $removeStmt = $conn->prepare("SELECT id, image_name, is_cover FROM property_images WHERE property_id=? AND id=? LIMIT 1");
+        if ($removeStmt) {
+            foreach ($imagesToRemove as $imgId) {
+                if ($imgId <= 0) {
+                    continue;
+                }
+                $removeStmt->bind_param("ii", $id, $imgId);
+                $removeStmt->execute();
+                $removeRes = $removeStmt->get_result();
+                $removeRow = $removeRes ? $removeRes->fetch_assoc() : null;
+                if ($removeRow) {
+                    $deleteStmt = $conn->prepare("DELETE FROM property_images WHERE id=? AND property_id=?");
+                    if ($deleteStmt) {
+                        $deleteStmt->bind_param("ii", $imgId, $id);
+                        $deleteStmt->execute();
+                        $deleteStmt->close();
+                    }
+                    $filePath = __DIR__ . "/uploads/" . $removeRow["image_name"];
+                    if (is_file($filePath)) {
+                        @unlink($filePath);
                     }
                 }
+            }
+            $removeStmt->close();
+        }
+    }
+
+    if ($error === "" && $images && isset($images["name"]) && is_array($images["name"])) {
+        $allowedMimeTypes = ["image/jpeg", "image/png"];
+        $extensionMap = [
+            "image/jpeg" => "jpg",
+            "image/png" => "png"
+        ];
+        $uploadDir = __DIR__ . "/uploads";
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+            $error = "Upload folder could not be created.";
+        } elseif (!is_writable($uploadDir)) {
+            $error = "Upload folder is not writable.";
+        } else {
+            $fileCount = count($images["name"]);
+            for ($i = 0; $i < $fileCount; $i++) {
+                $fileError = (int)($images["error"][$i] ?? UPLOAD_ERR_NO_FILE);
+                if ($fileError === UPLOAD_ERR_NO_FILE) {
+                    continue;
+                }
+                if ($fileError !== UPLOAD_ERR_OK) {
+                    $error = upload_error_message($fileError);
+                    break;
+                }
+                $tmpName = $images["tmp_name"][$i] ?? "";
+                if ($tmpName === "" || !is_uploaded_file($tmpName)) {
+                    $error = "Invalid uploaded file.";
+                    break;
+                }
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $detectedMime = $finfo->file($tmpName);
+                if (!in_array($detectedMime, $allowedMimeTypes, true)) {
+                    $error = "Only JPG and PNG images are allowed.";
+                    break;
+                }
+                $extension = $extensionMap[$detectedMime] ?? "jpg";
+                $newName = "property_" . date("Ymd_His") . "_" . bin2hex(random_bytes(5)) . "." . $extension;
+                $destinationPath = $uploadDir . "/" . $newName;
+                if (!move_uploaded_file($tmpName, $destinationPath)) {
+                    $error = "Image upload failed. Please check folder permissions.";
+                    break;
+                }
+                $newImageNames[] = $newName;
             }
         }
     }
 
     if ($error === "") {
-        $status = "pending";
-        $updateStmt = $conn->prepare("UPDATE properties SET title=?, type=?, seater_option=?, bhk_option=?, latitude=?, longitude=?, map_url=?, rent=?, sector=?, address_line=?, description=?, amenities=?, furnishing=?, available_from=?, phone=?, image=?, status=? WHERE id=? AND owner_user_id=?");
+        $remainingCount = count($existingImages) - count(array_filter($imagesToRemove)) + count($newImageNames);
+        if ($remainingCount <= 0) {
+            $error = "Please keep at least one listing image.";
+        }
+    }
+
+    if ($error === "") {
+        $changes = [];
+        $oldValues = [
+            "title" => (string)($row["title"] ?? ""),
+            "type" => (string)($row["type"] ?? ""),
+            "seater_option" => (string)($row["seater_option"] ?? ""),
+            "bhk_option" => (string)($row["bhk_option"] ?? ""),
+            "rent" => (string)($row["rent"] ?? ""),
+            "sector" => (string)($row["sector"] ?? ""),
+            "address_line" => (string)($row["address_line"] ?? ""),
+            "description" => (string)($row["description"] ?? ""),
+            "amenities" => (string)($row["amenities"] ?? ""),
+            "furnishing" => (string)($row["furnishing"] ?? ""),
+            "available_from" => (string)($row["available_from"] ?? ""),
+            "phone" => (string)($row["phone"] ?? ""),
+            "latitude" => (string)($row["latitude"] ?? ""),
+            "longitude" => (string)($row["longitude"] ?? ""),
+            "map_url" => (string)($row["map_url"] ?? "")
+        ];
+        $newValues = [
+            "title" => (string)$title,
+            "type" => (string)$type,
+            "seater_option" => (string)$seaterOption,
+            "bhk_option" => (string)$bhkOption,
+            "rent" => (string)$rent,
+            "sector" => (string)$sector,
+            "address_line" => (string)$addressLine,
+            "description" => (string)$description,
+            "amenities" => (string)$amenities,
+            "furnishing" => (string)$furnishing,
+            "available_from" => (string)$availableFrom,
+            "phone" => (string)$phone,
+            "latitude" => $latitude !== null ? (string)$latitude : "",
+            "longitude" => $longitude !== null ? (string)$longitude : "",
+            "map_url" => (string)$mapUrl
+        ];
+        foreach ($newValues as $field => $value) {
+            $old = $oldValues[$field] ?? "";
+            if (trim($old) !== trim($value)) {
+                $changes[] = [$field, $old, $value];
+            }
+        }
+
+        $updateStmt = $conn->prepare("UPDATE properties SET title=?, type=?, seater_option=?, bhk_option=?, latitude=?, longitude=?, map_url=?, rent=?, sector=?, address_line=?, description=?, amenities=?, furnishing=?, available_from=?, phone=?, image=?, updated_at=NOW() WHERE id=? AND owner_user_id=?");
         $updateStmt->bind_param(
-            "ssssddsisssssssssii",
+            "ssssddsissssssssii",
             $title,
             $type,
             $seaterOption,
@@ -145,13 +254,116 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $availableFrom,
             $phone,
             $imageName,
-            $status,
             $id,
             $ownerId
         );
         $updateStmt->execute();
         $updatedRows = $updateStmt->affected_rows;
         $updateStmt->close();
+
+        if ($updatedRows >= 0) {
+            if (!empty($newImageNames)) {
+                $maxOrder = 0;
+                foreach ($existingImages as $imgRow) {
+                    $maxOrder = max($maxOrder, (int)($imgRow["sort_order"] ?? 0));
+                }
+                $imgStmt = $conn->prepare("INSERT INTO property_images (property_id, image_name, is_cover, sort_order, label) VALUES (?, ?, ?, ?, ?)");
+                if ($imgStmt) {
+                    foreach ($newImageNames as $idx => $imgName) {
+                        $isCover = 0;
+                        $maxOrder++;
+                        $label = isset($newImageLabels[$idx]) ? trim((string)$newImageLabels[$idx]) : "";
+                        $imgStmt->bind_param("isiis", $id, $imgName, $isCover, $maxOrder, $label);
+                        $imgStmt->execute();
+                    }
+                    $imgStmt->close();
+                }
+            }
+            if (!empty($imageOrders)) {
+                $orderStmt = $conn->prepare("UPDATE property_images SET sort_order=? WHERE id=? AND property_id=?");
+                if ($orderStmt) {
+                    foreach ($imageOrders as $imgId => $orderVal) {
+                        $imgId = (int)$imgId;
+                        $orderVal = (int)$orderVal;
+                        if ($imgId <= 0) {
+                            continue;
+                        }
+                        $orderStmt->bind_param("iii", $orderVal, $imgId, $id);
+                        $orderStmt->execute();
+                    }
+                    $orderStmt->close();
+                }
+            }
+            if (!empty($imageLabels)) {
+                $labelStmt = $conn->prepare("UPDATE property_images SET label=? WHERE id=? AND property_id=?");
+                if ($labelStmt) {
+                    foreach ($imageLabels as $imgId => $labelVal) {
+                        $imgId = (int)$imgId;
+                        if ($imgId <= 0) {
+                            continue;
+                        }
+                        $labelVal = trim((string)$labelVal);
+                        $labelStmt->bind_param("sii", $labelVal, $imgId, $id);
+                        $labelStmt->execute();
+                    }
+                    $labelStmt->close();
+                }
+            }
+            if ($coverImageId > 0) {
+                $resetCover = $conn->prepare("UPDATE property_images SET is_cover=0 WHERE property_id=?");
+                if ($resetCover) {
+                    $resetCover->bind_param("i", $id);
+                    $resetCover->execute();
+                    $resetCover->close();
+                }
+                $setCover = $conn->prepare("UPDATE property_images SET is_cover=1 WHERE property_id=? AND id=?");
+                if ($setCover) {
+                    $setCover->bind_param("ii", $id, $coverImageId);
+                    $setCover->execute();
+                    $setCover->close();
+                }
+            }
+            $coverStmt = $conn->prepare("SELECT image_name FROM property_images WHERE property_id=? ORDER BY is_cover DESC, sort_order ASC, id ASC LIMIT 1");
+            if ($coverStmt) {
+                $coverStmt->bind_param("i", $id);
+                $coverStmt->execute();
+                $coverRes = $coverStmt->get_result();
+                $coverRow = $coverRes ? $coverRes->fetch_assoc() : null;
+                if ($coverRow && !empty($coverRow["image_name"])) {
+                    $newCover = $coverRow["image_name"];
+                    $coverUpdate = $conn->prepare("UPDATE properties SET image=? WHERE id=? AND owner_user_id=?");
+                    if ($coverUpdate) {
+                        $coverUpdate->bind_param("sii", $newCover, $id, $ownerId);
+                        $coverUpdate->execute();
+                        $coverUpdate->close();
+                    }
+                }
+                $coverStmt->close();
+            }
+            if (!empty($changes)) {
+                $logStmt = $conn->prepare("INSERT INTO property_change_log (property_id, changed_by_role, changed_by_user_id, field_name, old_value, new_value) VALUES (?, 'owner', ?, ?, ?, ?)");
+                if ($logStmt) {
+                    foreach ($changes as $change) {
+                        [$field, $oldVal, $newVal] = $change;
+                        $logStmt->bind_param("iisss", $id, $ownerId, $field, $oldVal, $newVal);
+                        $logStmt->execute();
+                    }
+                    $logStmt->close();
+                }
+            }
+            $adminNotice = $conn->prepare("
+                INSERT INTO admin_notifications (admin_id, title, message, url)
+                SELECT a.id, 'Owner updated listing', ?, ?
+                FROM admin a
+            ");
+            if ($adminNotice) {
+                $adminMessage = "Listing #" . $id . " was updated by the owner.";
+                $adminUrl = "edit-property.php?id=" . $id;
+                $adminNotice->bind_param("ss", $adminMessage, $adminUrl);
+                $adminNotice->execute();
+                $adminNotice->close();
+            }
+        }
 
         if ($updatedRows >= 0) {
             header("Location: owner-dashboard.php?updated=1");
@@ -201,7 +413,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <div class="max-w-4xl mx-auto px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <h1 class="font-display text-2xl">Edit Listing</h1>
-                <p class="text-xs text-slate-500 dark:text-slate-300">Any update will be sent to admin for reapproval.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-300">Updates apply immediately to your listing.</p>
             </div>
             <div class="flex gap-2 text-sm">
                 <button id="theme-toggle" type="button" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
@@ -340,12 +552,39 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             </div>
 
             <div>
-                <label class="block text-sm font-semibold mb-1">Replace Listing Image (optional)</label>
-                <input type="file" name="image" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600 dark:bg-slate-900 dark:border-slate-700">
-                <p class="text-xs text-slate-500 dark:text-slate-300 mt-1">Leave blank to keep current image.</p>
+                <label class="block text-sm font-semibold mb-2">Listing Images</label>
+                <?php if (!empty($existingImages)) { ?>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                        <?php foreach ($existingImages as $img) { ?>
+                            <label class="rounded-xl border border-slate-200 p-2 bg-white dark:bg-slate-900 dark:border-slate-700">
+                                <img src="uploads/<?php echo htmlspecialchars((string)$img["image_name"]); ?>" alt="Listing image" class="w-full h-28 object-cover rounded-lg">
+                                <div class="mt-2 flex items-center justify-between text-xs">
+                                    <span class="text-slate-500"><?php echo (int)$img["is_cover"] === 1 ? "Cover" : "Image"; ?></span>
+                                    <span class="flex items-center gap-1">
+                                        <input type="checkbox" name="remove_images[]" value="<?php echo (int)$img["id"]; ?>" class="rounded">
+                                        Remove
+                                    </span>
+                                </div>
+                                <div class="mt-2 flex items-center justify-between text-xs">
+                                    <label class="inline-flex items-center gap-1">
+                                        <input type="radio" name="cover_image_id" value="<?php echo (int)$img["id"]; ?>" <?php echo (int)$img["is_cover"] === 1 ? "checked" : ""; ?>>
+                                        Cover
+                                    </label>
+                                    <input type="number" name="image_order[<?php echo (int)$img["id"]; ?>]" value="<?php echo (int)($img["sort_order"] ?? 0); ?>" class="w-16 border border-slate-200 rounded px-2 py-1 text-xs" title="Order">
+                                </div>
+                                <div class="mt-2">
+                                    <input type="text" name="image_label[<?php echo (int)$img["id"]; ?>]" value="<?php echo htmlspecialchars((string)($img["label"] ?? "")); ?>" placeholder="Tag (e.g. Bedroom)" class="w-full border border-slate-200 rounded px-2 py-1 text-xs">
+                                </div>
+                            </label>
+                        <?php } ?>
+                    </div>
+                <?php } ?>
+                <input type="file" name="images[]" multiple class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600 dark:bg-slate-900 dark:border-slate-700">
+                <p class="text-xs text-slate-500 dark:text-slate-300 mt-1">Upload more images. Select cover and order above.</p>
+                <textarea name="new_image_labels" rows="2" placeholder="Tags for new images (one per line)" class="mt-2 w-full border border-slate-200 rounded px-3 py-2 text-xs bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
             </div>
 
-            <button type="submit" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-cyan-700 transition">Save and Send for Reapproval</button>
+            <button type="submit" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-cyan-700 transition">Save Changes</button>
         </form>
     </main>
 

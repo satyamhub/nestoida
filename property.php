@@ -227,6 +227,25 @@ if (!$row) {
     header("Location: index.php");
     exit();
 }
+$imageList = [];
+$imgStmt = $conn->prepare("SELECT image_name, label FROM property_images WHERE property_id=? ORDER BY is_cover DESC, sort_order ASC, id ASC");
+if ($imgStmt) {
+    $imgStmt->bind_param("i", $id);
+    $imgStmt->execute();
+    $imgRes = $imgStmt->get_result();
+    if ($imgRes) {
+        while ($img = $imgRes->fetch_assoc()) {
+            $imageList[] = [
+                "name" => (string)$img["image_name"],
+                "label" => (string)($img["label"] ?? "")
+            ];
+        }
+    }
+    $imgStmt->close();
+}
+if (empty($imageList) && !empty($row["image"])) {
+    $imageList[] = ["name" => (string)$row["image"], "label" => ""];
+}
 $feedbackSaved = isset($_GET["feedback"]) && $_GET["feedback"] === "1";
 $specText = listingSpecText($row);
 $isFavorite = false;
@@ -423,11 +442,31 @@ try {
 
         <section class="grid lg:grid-cols-3 gap-7">
             <article class="lg:col-span-2 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-lg shadow-slate-100 dark:bg-slate-900 dark:border-slate-800">
-                <img
-                    src="uploads/<?php echo htmlspecialchars($row['image']); ?>"
-                    alt="<?php echo htmlspecialchars($row['title']); ?>"
-                    class="w-full h-80 md:h-[460px] object-cover"
-                >
+                <div class="relative">
+                    <button type="button" id="gallery-prev" class="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full border border-white/70 bg-white/80 px-3 py-2 text-sm font-semibold shadow hover:bg-white <?php echo count($imageList) <= 1 ? 'hidden' : ''; ?>">
+                        ‹
+                    </button>
+                    <button type="button" id="gallery-next" class="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full border border-white/70 bg-white/80 px-3 py-2 text-sm font-semibold shadow hover:bg-white <?php echo count($imageList) <= 1 ? 'hidden' : ''; ?>">
+                        ›
+                    </button>
+                    <div id="gallery-slider" class="flex gap-3 overflow-x-auto mobile-slider snap-x scroll-smooth">
+                        <?php foreach ($imageList as $imgItem) { ?>
+                            <?php $imgName = $imgItem["name"]; ?>
+                            <div class="relative w-full flex-shrink-0 snap-start">
+                                <img
+                                    src="uploads/<?php echo htmlspecialchars($imgName); ?>"
+                                    alt="<?php echo htmlspecialchars($row['title']); ?>"
+                                    class="w-full h-80 md:h-[460px] object-cover rounded-none cursor-zoom-in"
+                                    loading="lazy"
+                                    data-full="uploads/<?php echo htmlspecialchars($imgName); ?>"
+                                >
+                                <?php if (!empty($imgItem["label"])) { ?>
+                                    <span class="absolute top-3 left-3 px-3 py-1 text-xs font-semibold rounded-full bg-white/90 text-slate-800 border border-slate-200"><?php echo htmlspecialchars($imgItem["label"]); ?></span>
+                                <?php } ?>
+                            </div>
+                        <?php } ?>
+                    </div>
+                </div>
 
                 <div class="p-6 md:p-8">
                     <div class="grid md:grid-cols-2 gap-6">
@@ -637,6 +676,22 @@ try {
             </aside>
         </section>
     </main>
+    <div id="image-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
+        <button id="image-modal-close" class="absolute top-5 right-5 text-white text-4xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60">×</button>
+        <button id="image-modal-prev" class="absolute left-6 top-1/2 -translate-y-1/2 text-white text-3xl">‹</button>
+        <button id="image-modal-next" class="absolute right-6 top-1/2 -translate-y-1/2 text-white text-3xl">›</button>
+        <div id="image-modal-track" class="flex gap-4 overflow-x-auto snap-x max-w-[92vw]">
+            <?php foreach ($imageList as $imgItem) { ?>
+                <?php $imgName = $imgItem["name"]; ?>
+                <div class="relative w-[92vw] max-w-[92vw] flex-shrink-0 snap-start">
+                    <img src="uploads/<?php echo htmlspecialchars($imgName); ?>" alt="Property image" class="max-h-[90vh] w-full object-contain rounded-2xl shadow-2xl">
+                    <?php if (!empty($imgItem["label"])) { ?>
+                        <span class="absolute top-3 left-3 px-3 py-1 text-xs font-semibold rounded-full bg-white/90 text-slate-800 border border-slate-200"><?php echo htmlspecialchars($imgItem["label"]); ?></span>
+                    <?php } ?>
+                </div>
+            <?php } ?>
+        </div>
+    </div>
     <script>
         (function () {
             const btn = document.getElementById("theme-toggle");
@@ -644,6 +699,16 @@ try {
             const feedbackSlider = document.getElementById("feedback-slider");
             const feedbackPrev = document.getElementById("feedback-prev");
             const feedbackNext = document.getElementById("feedback-next");
+            const gallerySlider = document.getElementById("gallery-slider");
+            const galleryPrev = document.getElementById("gallery-prev");
+            const galleryNext = document.getElementById("gallery-next");
+            const imageModal = document.getElementById("image-modal");
+            const imageModalTrack = document.getElementById("image-modal-track");
+            const imageModalClose = document.getElementById("image-modal-close");
+            const imageModalPrev = document.getElementById("image-modal-prev");
+            const imageModalNext = document.getElementById("image-modal-next");
+            const galleryImages = gallerySlider ? Array.from(gallerySlider.querySelectorAll("img[data-full]")) : [];
+            let currentImageIndex = -1;
             function syncThemeLabel() {
                 if (!label) return;
                 label.textContent = document.documentElement.classList.contains("dark") ? "Light" : "Dark";
@@ -671,6 +736,86 @@ try {
             if (feedbackNext) {
                 feedbackNext.addEventListener("click", function () { scrollFeedback(1); });
             }
+
+            function scrollGallery(direction) {
+                if (!gallerySlider) return;
+                const amount = Math.max(260, Math.floor(gallerySlider.clientWidth * 0.65));
+                const maxScroll = gallerySlider.scrollWidth - gallerySlider.clientWidth;
+                if (direction > 0 && gallerySlider.scrollLeft >= maxScroll - 5) {
+                    gallerySlider.scrollTo({ left: 0, behavior: "smooth" });
+                    return;
+                }
+                if (direction < 0 && gallerySlider.scrollLeft <= 5) {
+                    gallerySlider.scrollTo({ left: maxScroll, behavior: "smooth" });
+                    return;
+                }
+                gallerySlider.scrollBy({ left: direction * amount, behavior: "smooth" });
+            }
+            if (galleryPrev) {
+                galleryPrev.addEventListener("click", function () { scrollGallery(-1); });
+            }
+            if (galleryNext) {
+                galleryNext.addEventListener("click", function () { scrollGallery(1); });
+            }
+
+            if (gallerySlider && imageModal && imageModalTrack) {
+                gallerySlider.addEventListener("click", function (event) {
+                    const target = event.target;
+                    if (!(target instanceof HTMLImageElement)) return;
+                    currentImageIndex = galleryImages.indexOf(target);
+                    imageModal.classList.remove("hidden");
+                    imageModal.classList.add("flex");
+                    document.body.classList.add("overflow-hidden");
+                    const slideWidth = imageModalTrack.clientWidth;
+                    imageModalTrack.scrollTo({ left: slideWidth * currentImageIndex, behavior: "smooth" });
+                });
+            }
+            function closeImageModal() {
+                if (!imageModal) return;
+                imageModal.classList.add("hidden");
+                imageModal.classList.remove("flex");
+                document.body.classList.remove("overflow-hidden");
+                currentImageIndex = -1;
+            }
+            function showModalImage(offset) {
+                if (!imageModalTrack || galleryImages.length === 0) return;
+                if (currentImageIndex < 0) currentImageIndex = 0;
+                const nextIndex = (currentImageIndex + offset + galleryImages.length) % galleryImages.length;
+                const slideWidth = imageModalTrack.clientWidth;
+                imageModalTrack.scrollTo({ left: slideWidth * nextIndex, behavior: "smooth" });
+                currentImageIndex = nextIndex;
+            }
+            if (imageModalClose) {
+                imageModalClose.addEventListener("click", closeImageModal);
+            }
+            if (imageModalPrev) {
+                imageModalPrev.addEventListener("click", function () { showModalImage(-1); });
+            }
+            if (imageModalNext) {
+                imageModalNext.addEventListener("click", function () { showModalImage(1); });
+            }
+            if (imageModal) {
+                imageModal.addEventListener("click", function (event) {
+                    if (event.target === imageModal) closeImageModal();
+                });
+            }
+            if (imageModalTrack) {
+                imageModalTrack.addEventListener("scroll", function () {
+                    const slideWidth = imageModalTrack.clientWidth || 1;
+                    const idx = Math.round(imageModalTrack.scrollLeft / slideWidth);
+                    currentImageIndex = idx;
+                });
+            }
+            document.addEventListener("keydown", function (event) {
+                if (!imageModal || imageModal.classList.contains("hidden")) return;
+                if (event.key === "Escape") {
+                    closeImageModal();
+                } else if (event.key === "ArrowLeft") {
+                    showModalImage(-1);
+                } else if (event.key === "ArrowRight") {
+                    showModalImage(1);
+                }
+            });
         })();
     </script>
     <script src="assets/js/back-button.js"></script>

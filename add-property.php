@@ -70,20 +70,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     $allowedMimeTypes = ['image/jpeg', 'image/png'];
-    $image = $_FILES['image'] ?? null;
+    $images = $_FILES['images'] ?? null;
+    $imageLabelsRaw = trim((string)($_POST['image_labels'] ?? ''));
+    $imageLabels = $imageLabelsRaw !== '' ? preg_split('/\r\n|\r|\n/', $imageLabelsRaw) : [];
 
-    if (!$image || !isset($image['error'])) {
-        $error = "Image upload data is missing.";
-    } elseif ((int)$image['error'] !== UPLOAD_ERR_OK) {
-        $error = upload_error_message((int)$image['error']);
-    } elseif (!is_uploaded_file($image['tmp_name'])) {
-        $error = "Invalid uploaded file.";
-    } else {
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $detectedMime = $finfo->file($image['tmp_name']);
-        if (!in_array($detectedMime, $allowedMimeTypes, true)) {
-            $error = "Only JPG and PNG images are allowed.";
-        }
+    if (!$images || !isset($images['name']) || !is_array($images['name']) || count($images['name']) === 0) {
+        $error = "Please select at least one image.";
     }
 
     if ($error === "") {
@@ -98,30 +90,75 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } elseif (!is_writable($uploadDir)) {
             $error = "Upload folder is not writable.";
         } else {
-            $extension = $extensionMap[$detectedMime] ?? 'jpg';
-            $imageName = "property_" . date("Ymd_His") . "_" . bin2hex(random_bytes(5)) . "." . $extension;
-            $destinationPath = $uploadDir . "/" . $imageName;
+            $savedImages = [];
+            $fileCount = count($images['name']);
+            for ($i = 0; $i < $fileCount; $i++) {
+                $fileError = (int)($images['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+                if ($fileError === UPLOAD_ERR_NO_FILE) {
+                    continue;
+                }
+                if ($fileError !== UPLOAD_ERR_OK) {
+                    $error = upload_error_message($fileError);
+                    break;
+                }
+                $tmpName = $images['tmp_name'][$i] ?? '';
+                if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+                    $error = "Invalid uploaded file.";
+                    break;
+                }
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $detectedMime = $finfo->file($tmpName);
+                if (!in_array($detectedMime, $allowedMimeTypes, true)) {
+                    $error = "Only JPG and PNG images are allowed.";
+                    break;
+                }
+                $extension = $extensionMap[$detectedMime] ?? 'jpg';
+                $imageName = "property_" . date("Ymd_His") . "_" . bin2hex(random_bytes(5)) . "." . $extension;
+                $destinationPath = $uploadDir . "/" . $imageName;
+                if (!move_uploaded_file($tmpName, $destinationPath)) {
+                    $error = "Image upload failed. Please check folder permissions.";
+                    break;
+                }
+                $savedImages[] = $imageName;
+            }
 
-            if (move_uploaded_file($image['tmp_name'], $destinationPath)) {
+            if ($error === "" && count($savedImages) === 0) {
+                $error = "Please select at least one image.";
+            }
+
+            if ($error === "" && count($savedImages) > 0) {
+                $coverImage = $savedImages[0];
                 $status = $isAdmin ? "approved" : "pending";
                 $ownerUserId = $isOwner ? (int)$_SESSION['user_id'] : null;
 
                 if ($ownerUserId !== null) {
                     $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, map_url, rent, sector, address_line, description, amenities, furnishing, available_from, image, phone, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("issssddsisssssssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $imageName, $phone, $status);
+                    $stmt->bind_param("issssddsisssssssss", $ownerUserId, $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $coverImage, $phone, $status);
                 } else {
                     $stmt = $conn->prepare("INSERT INTO properties (owner_user_id, title, type, seater_option, bhk_option, latitude, longitude, map_url, rent, sector, address_line, description, amenities, furnishing, available_from, image, phone, status) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->bind_param("ssssddsisssssssss", $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $imageName, $phone, $status);
+                    $stmt->bind_param("ssssddsisssssssss", $title, $type, $seaterOption, $bhkOption, $latitude, $longitude, $mapUrl, $rent, $sector, $addressLine, $description, $amenities, $furnishing, $availableFrom, $coverImage, $phone, $status);
                 }
 
                 if ($stmt->execute()) {
+                    $propertyId = (int)$stmt->insert_id;
+                    if ($propertyId > 0) {
+                        $imgStmt = $conn->prepare("INSERT INTO property_images (property_id, image_name, is_cover, sort_order, label) VALUES (?, ?, ?, ?, ?)");
+                        if ($imgStmt) {
+                            foreach ($savedImages as $idx => $imgName) {
+                                $isCover = $idx === 0 ? 1 : 0;
+                                $sortOrder = $idx + 1;
+                                $label = isset($imageLabels[$idx]) ? trim((string)$imageLabels[$idx]) : "";
+                                $imgStmt->bind_param("isiis", $propertyId, $imgName, $isCover, $sortOrder, $label);
+                                $imgStmt->execute();
+                            }
+                            $imgStmt->close();
+                        }
+                    }
                     $message = $isAdmin ? "Property added and approved." : "Property submitted. It will be reviewed by admin.";
                 } else {
                     $error = "Could not save property.";
                 }
                 $stmt->close();
-            } else {
-                $error = "Image upload failed. Please check folder permissions.";
             }
         }
     }
@@ -304,8 +341,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
 
             <div>
-                <label class="block text-sm font-semibold mb-1">Listing Image</label>
-                <input type="file" name="image" required class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600 dark:bg-slate-900 dark:border-slate-700">
+                <label class="block text-sm font-semibold mb-1">Listing Images</label>
+                <input type="file" name="images[]" multiple required class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-600 dark:bg-slate-900 dark:border-slate-700">
+                <p class="text-xs text-slate-500 dark:text-slate-300 mt-1">First image will be used as cover.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Image Tags (optional)</label>
+                <textarea name="image_labels" rows="3" placeholder="Bedroom&#10;Bathroom&#10;Kitchen" class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700"></textarea>
+                <p class="text-xs text-slate-500 dark:text-slate-300 mt-1">Enter one tag per line. Order should match the upload order.</p>
             </div>
 
             <button type="submit" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-cyan-700 transition">Submit Listing</button>
