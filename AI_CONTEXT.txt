@@ -1,0 +1,34 @@
+Project: Nestoida (PHP + MySQL rental listings)
+Goal: Continue development with existing features and UI.
+
+Stack
+- PHP 8.x + MySQL (mysqli), Apache
+- Tailwind CSS (CDN) + custom CSS in assets/css/airbnb.css
+- Vanilla JS in assets/js
+
+Core Features
+- Auth: user (owner/viewer) + admin, email verification, password reset
+- Listings: add/edit, approval workflow, ratings/comments, inquiries, favorites, reports
+- Owner verification with badge + notifications
+- Google OAuth login/signup (with profile photo import)
+- Dark/light theme, loaders, sliders, live filters
+- Audit log for listing changes
+
+Important Files
+- db.php (db connection + migrations + helpers)
+- index.php (home listings + search/filter)
+- property.php (property details + gallery + forms)
+- owner-dashboard.php, dashboard.php
+- user-login.php, user-register.php, google-auth.php, google-callback.php
+- assets/js/nestoida-loader.js
+- assets/css/airbnb.css
+
+Env Vars (.htaccess)
+- SMTP_USER, SMTP_PASS, SMTP_FROM_EMAIL, APP_URL
+- GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
+
+Current Branch: main
+Latest Tag: v17.0.5
+
+What I Need Next
+- <add next tasks here>
