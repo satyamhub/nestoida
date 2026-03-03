@@ -16,6 +16,9 @@ if ($email !== "" && $token !== "") {
 }
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $password = $_POST["password"] ?? "";
     $confirm = $_POST["confirm_password"] ?? "";
 
@@ -41,6 +44,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
 
         $updateUser->close();
+    }
     }
 }
 ?>
@@ -98,6 +102,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             <?php if ($validToken) { ?>
                 <form method="POST" class="space-y-4">
+                    <?php echo nestoida_csrf_field(); ?>
                     <input type="hidden" name="email" value="<?php echo htmlspecialchars($email); ?>">
                     <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
                     <div>

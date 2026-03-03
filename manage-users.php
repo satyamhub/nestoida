@@ -11,7 +11,9 @@ $message = "";
 $error = "";
 $search = trim($_GET["q"] ?? "");
 
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["action"], $_POST["user_id"])) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && !nestoida_csrf_valid()) {
+    $error = "Invalid request. Please refresh and try again.";
+} elseif ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["action"], $_POST["user_id"])) {
     $action = trim($_POST["action"]);
     $userId = (int)$_POST["user_id"];
 
@@ -134,9 +136,7 @@ if ($search !== "") {
                                 $uPhoto = "";
                                 $isOwnerVerified = !empty($u["owner_verified"]);
                                 $ownerBadgeClass = $isOwnerVerified ? "border-cyan-300 text-cyan-700 bg-cyan-50" : "border-slate-200 text-slate-500 bg-slate-50";
-                                if (!empty($u["profile_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . $u["profile_photo"])) {
-                                    $uPhoto = "uploads/profiles/" . $u["profile_photo"];
-                                }
+                                $uPhoto = nestoida_profile_photo_url($u["profile_photo"] ?? "");
                                 ?>
                                 <tr>
                                     <td class="px-4 py-3">
@@ -171,6 +171,7 @@ if ($search !== "") {
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap gap-2">
                                             <form method="POST" class="inline-flex items-center gap-2">
+                                                <?php echo nestoida_csrf_field(); ?>
                                                 <input type="hidden" name="action" value="set_role">
                                                 <input type="hidden" name="user_id" value="<?php echo (int)$u["id"]; ?>">
                                                 <select name="role" class="border border-slate-300 rounded-full px-3 py-1.5">
@@ -181,6 +182,7 @@ if ($search !== "") {
                                             </form>
                                             <?php if ($u["role"] === "owner") { ?>
                                                 <form method="POST" class="inline">
+                                                    <?php echo nestoida_csrf_field(); ?>
                                                     <input type="hidden" name="action" value="toggle_owner_verified">
                                                     <input type="hidden" name="user_id" value="<?php echo (int)$u["id"]; ?>">
                                                     <input type="hidden" name="owner_verified" value="<?php echo $isOwnerVerified ? 0 : 1; ?>">
@@ -190,6 +192,7 @@ if ($search !== "") {
                                                 </form>
                                             <?php } ?>
                                             <form method="POST" onsubmit="return confirm('Delete this user?');" class="inline">
+                                                <?php echo nestoida_csrf_field(); ?>
                                                 <input type="hidden" name="action" value="delete_user">
                                                 <input type="hidden" name="user_id" value="<?php echo (int)$u["id"]; ?>">
                                                 <button type="submit" class="px-3 py-1.5 rounded-full border border-rose-300 text-rose-700">Delete</button>

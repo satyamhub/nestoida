@@ -1,12 +1,12 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 include "db.php";
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
 
@@ -19,6 +19,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $admin = $result->fetch_assoc();
 
         if (password_verify($password, $admin['password'])) {
+            session_regenerate_id(true);
             $_SESSION['admin'] = $username;
             header("Location: dashboard.php");
             exit();
@@ -27,6 +28,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     } else {
         $error = "User not found.";
+    }
     }
 }
 ?>
@@ -90,6 +92,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <?php } ?>
 
             <form method="POST" class="mt-6 space-y-4">
+                <?php echo nestoida_csrf_field(); ?>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Username</label>
                     <input type="text" name="username" required class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700">

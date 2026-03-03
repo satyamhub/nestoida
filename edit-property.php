@@ -51,6 +51,9 @@ if ($existingImagesRes) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $title = trim((string)($_POST['title'] ?? ""));
     $type = trim($_POST['type']);
     $typeLower = strtolower($type);
@@ -353,6 +356,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         header("Location: dashboard.php");
         exit();
     }
+    }
 }
 ?>
 
@@ -413,6 +417,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="mb-4 border border-rose-200 bg-rose-50 text-rose-700 rounded-xl p-3 text-sm"><?php echo htmlspecialchars($error); ?></div>
         <?php } ?>
         <form method="POST" enctype="multipart/form-data" class="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5 dark:bg-slate-900 dark:border-slate-800">
+            <?php echo nestoida_csrf_field(); ?>
             <div>
                 <label class="block text-sm font-semibold mb-1">Property Title</label>
                 <input type="text" name="title" value="<?php echo htmlspecialchars($row['title']); ?>" class="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-600 bg-white dark:bg-slate-900 dark:border-slate-700" required>

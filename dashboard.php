@@ -7,6 +7,11 @@ if (!isset($_SESSION['admin'])) {
     exit();
 }
 
+if ($_SERVER["REQUEST_METHOD"] === "POST" && !nestoida_csrf_valid()) {
+    http_response_code(403);
+    exit("Invalid request.");
+}
+
 $adminUsername = (string)$_SESSION['admin'];
 $adminId = 0;
 $adminStmt = $conn->prepare("SELECT id FROM admin WHERE username=? LIMIT 1");
@@ -427,6 +432,7 @@ function renderStars($avgRating)
                         </select>
                     </form>
                     <form method="POST">
+                        <?php echo nestoida_csrf_field(); ?>
                         <button type="submit" name="mark_notifications_read" value="1" class="px-3 py-2 rounded-full border border-slate-300 text-sm">
                             Mark all read<?php echo $adminUnread > 0 ? " (" . $adminUnread . ")" : ""; ?>
                         </button>
@@ -453,6 +459,7 @@ function renderStars($avgRating)
                                 <?php } ?>
                                 <?php if ((int)$note["is_read"] === 0) { ?>
                                     <form method="POST">
+                                        <?php echo nestoida_csrf_field(); ?>
                                         <input type="hidden" name="notification_id" value="<?php echo (int)$note["id"]; ?>">
                                         <button type="submit" name="mark_notification_read" value="1" class="text-xs text-slate-600 underline">Mark read</button>
                                     </form>
@@ -586,21 +593,28 @@ function renderStars($avgRating)
                                             <a href="edit-property.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Edit</a>
                                             <a href="listing-history.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">History</a>
                                             <form method="POST" class="inline">
+                                                <?php echo nestoida_csrf_field(); ?>
                                                 <input type="hidden" name="id" value="<?php echo (int)$row["id"]; ?>">
                                                 <input type="hidden" name="action" value="approve">
                                                 <button type="submit" class="px-3 py-1.5 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 transition">Approve</button>
                                             </form>
                                             <form method="POST" class="inline">
+                                                <?php echo nestoida_csrf_field(); ?>
                                                 <input type="hidden" name="id" value="<?php echo (int)$row["id"]; ?>">
                                                 <input type="hidden" name="action" value="reject">
                                                 <button type="submit" class="px-3 py-1.5 rounded-full bg-rose-600 text-white hover:bg-rose-700 transition">Reject</button>
                                             </form>
                                             <form method="POST" class="inline">
+                                                <?php echo nestoida_csrf_field(); ?>
                                                 <input type="hidden" name="id" value="<?php echo (int)$row["id"]; ?>">
                                                 <input type="hidden" name="action" value="pending">
                                                 <button type="submit" class="px-3 py-1.5 rounded-full border border-amber-300 text-amber-700 hover:bg-amber-50 transition">Pending</button>
                                             </form>
-                                            <a href="delete-property.php?id=<?php echo (int)$row['id']; ?>" class="px-3 py-1.5 rounded-full border border-rose-300 text-rose-700 hover:bg-rose-50 transition" onclick="return confirm('Delete this property?');">Delete</a>
+                                            <form method="POST" action="delete-property.php" class="inline" onsubmit="return confirm('Delete this property?');">
+                                                <?php echo nestoida_csrf_field(); ?>
+                                                <input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>">
+                                                <button type="submit" class="px-3 py-1.5 rounded-full border border-rose-300 text-rose-700 hover:bg-rose-50 transition">Delete</button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>
@@ -624,7 +638,7 @@ function renderStars($avgRating)
                 </div>
 
                 <?php if ($hasRows) { ?>
-                    <form method="POST" id="bulk-form"></form>
+                    <form method="POST" id="bulk-form"><?php echo nestoida_csrf_field(); ?></form>
                     <div class="px-5 py-4 border-t border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 dark:border-slate-800">
                         <p class="text-sm text-slate-500 dark:text-slate-300">Bulk actions apply to selected rows on this page.</p>
                         <div class="flex flex-wrap gap-2">
@@ -739,7 +753,8 @@ function renderStars($avgRating)
                 const isRead = parseInt(note.is_read, 10) === 1;
                 const newBadge = isRead ? "" : '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-200 text-emerald-700 bg-emerald-50">New</span>';
                 const openLink = note.url ? '<a class="inline-flex text-xs text-cyan-700 dark:text-cyan-300" href="' + note.url + '">Open</a>' : '';
-                const markRead = isRead ? '' : '<form method="POST"><input type="hidden" name="notification_id" value="' + note.id + '"><button type="submit" name="mark_notification_read" value="1" class="text-xs text-slate-600 underline">Mark read</button></form>';
+                const csrf = '<?php echo htmlspecialchars(nestoida_csrf_token(), ENT_QUOTES); ?>';
+                const markRead = isRead ? '' : '<form method="POST"><input type="hidden" name="csrf_token" value="' + csrf + '"><input type="hidden" name="notification_id" value="' + note.id + '"><button type="submit" name="mark_notification_read" value="1" class="text-xs text-slate-600 underline">Mark read</button></form>';
                 return (
                     '<article class="rounded-xl border border-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">' +
                         '<div class="flex items-center justify-between gap-2">' +

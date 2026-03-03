@@ -69,10 +69,7 @@ function listingSpecText($row)
     return "";
 }
 
-$ownerPhotoPath = "";
-if (!empty($owner["profile_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . $owner["profile_photo"])) {
-    $ownerPhotoPath = "uploads/profiles/" . $owner["profile_photo"];
-}
+$ownerPhotoPath = nestoida_profile_photo_url($owner["profile_photo"] ?? "");
 ?>
 <!DOCTYPE html>
 <html lang="en">

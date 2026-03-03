@@ -218,6 +218,8 @@ function listingSpecText($row)
                     <a href="owner-dashboard.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Owner Panel</a>
                     <a href="owner-profile.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Profile</a>
                     <a href="add-property.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Add Property</a>
+                <?php } else { ?>
+                    <a href="become-owner.php" class="px-3 py-2 rounded-full border border-emerald-300 text-emerald-700 hover:border-emerald-500 dark:border-emerald-600 dark:text-emerald-300 transition">Become Owner</a>
                 <?php } ?>
                 <a href="favorites.php" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">Favorites</a>
                 <span class="px-3 py-2 rounded-full border border-cyan-300 text-cyan-700 dark:border-cyan-600 dark:text-cyan-300 capitalize"><?php echo htmlspecialchars($userRole); ?></span>
@@ -403,10 +405,7 @@ function listingSpecText($row)
                                 </p>
                             </div>
                             <?php
-                            $ownerPhotoPath = "";
-                            if (!empty($row["owner_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . $row["owner_photo"])) {
-                                $ownerPhotoPath = "uploads/profiles/" . $row["owner_photo"];
-                            }
+                            $ownerPhotoPath = nestoida_profile_photo_url($row["owner_photo"] ?? "");
                             ?>
                             <a href="owner-listings.php?owner_id=<?php echo (int)($row["owner_user_id"] ?? 0); ?>" class="mt-3 inline-flex items-center gap-2 hover:opacity-85 transition" title="View owner listings">
                                 <?php if ($ownerPhotoPath !== "") { ?>

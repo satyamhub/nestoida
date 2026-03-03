@@ -9,6 +9,9 @@ $devVerificationLink = "";
 $mailErrorDetail = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $fullName = trim($_POST["full_name"] ?? "");
     $email = trim($_POST["email"] ?? "");
     $password = $_POST["password"] ?? "";
@@ -65,6 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $checkStmt->close();
     }
+}
 }
 ?>
 <!DOCTYPE html>
@@ -442,6 +446,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <?php } ?>
 
                 <form method="POST" class="space-y-4">
+                    <?php echo nestoida_csrf_field(); ?>
                     <div>
                         <label class="block text-sm font-semibold mb-1">Full Name</label>
                     <input id="regName" type="text" name="full_name" required class="field w-full border border-slate-700 rounded-xl px-4 py-3 bg-slate-900/60 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500">
@@ -463,6 +468,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 </div>
                     <button type="submit" class="w-full bg-cyan-600 text-white py-3 rounded-xl font-semibold hover:bg-cyan-500 transition">Register</button>
                 </form>
+                <div class="mt-4">
+                    <button id="google-signup" type="button" class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-600 bg-white text-slate-900 py-3 font-semibold hover:bg-slate-100 transition">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.7 2-2.5 3.4-5.5 3.4-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 2.7 14.7 1.6 12 1.6 7.3 1.6 3.4 5.5 3.4 10.2S7.3 18.8 12 18.8c6.9 0 8.5-4.8 8.5-7.3 0-.5-.1-1-.2-1.3H12z"/>
+                            <path fill="#34A853" d="M3.4 7.7l3.2 2.4c.9-1.7 2.6-2.9 4.6-2.9 1.9 0 3.2.8 4 1.5l2.7-2.6C16.9 2.7 14.7 1.6 12 1.6c-3.3 0-6.2 1.9-7.6 4.9z"/>
+                            <path fill="#FBBC05" d="M12 18.8c3 0 5.5-1 7.3-2.7l-3.4-2.7c-.9.6-2.1 1-3.9 1-3 0-5.4-2-6.2-4.7l-3.3 2.5c1.4 3.4 4.8 6 9.5 6z"/>
+                            <path fill="#4285F4" d="M20.3 11.5c0-.5-.1-1-.2-1.3H12v3.9h5.5c-.3 1.2-1.1 2.3-2.3 3l3.4 2.7c2-1.8 3.2-4.4 3.2-7.3z"/>
+                        </svg>
+                        Continue with Google
+                    </button>
+                </div>
 
                 <div class="mt-4 flex gap-2 text-sm">
                 <a href="user-login.php" class="chip px-3 py-2 rounded-lg border border-slate-700">User Login</a>
@@ -482,6 +498,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         const regName = document.getElementById('regName');
         const regEmail = document.getElementById('regEmail');
         const regPass = document.getElementById('regPass');
+        const regRole = document.getElementById('regRole');
+        const googleSignup = document.getElementById('google-signup');
+        if (googleSignup) {
+            googleSignup.addEventListener('click', function () {
+                const role = regRole && regRole.value ? regRole.value : 'viewer';
+                window.location.href = 'google-auth.php?role=' + encodeURIComponent(role);
+            });
+        }
         function setHouseLit(isLit){
             if (!house) return;
             house.classList.toggle('house-lit', isLit);

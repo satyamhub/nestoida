@@ -8,6 +8,9 @@ SetEnv SMTP_SECURE tls
 SetEnv SMTP_USER nestoida.home@gmail.com
 SetEnv SMTP_PASS smqrnabhhvaevpct
 SetEnv SMTP_FROM_EMAIL nestoida.home@gmail.com
+SetEnv GOOGLE_CLIENT_ID 1080203880225-as0scus4t8912sq939tqsibg7vp6njto.apps.googleusercontent.com
+SetEnv GOOGLE_CLIENT_SECRET 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
+SetEnv GOOGLE_REDIRECT_URI http://localhost/nestoida/google-callback.php
 SetEnv SMTP_FROM_NAME Nestoida
 SetEnv VERIFICATION_TOKEN_TTL_SECONDS 86400
 

@@ -8,6 +8,7 @@ if (!isset($_SESSION["user_id"])) {
 }
 
 $userId = (int)$_SESSION["user_id"];
+$userRole = isset($_SESSION["user_role"]) ? (string)$_SESSION["user_role"] : "viewer";
 $stmt = $conn->prepare("
     SELECT
         p.*,
@@ -89,6 +90,9 @@ function renderStars($avgRating)
                     <span id="theme-toggle-label">Dark</span>
                 </button>
                 <a href="index.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Home</a>
+                <?php if ($userRole === "viewer") { ?>
+                    <a href="become-owner.php" class="px-3 py-2 rounded-full border border-emerald-300 text-emerald-700 hover:border-emerald-500 dark:border-emerald-600 dark:text-emerald-300 transition">Become Owner</a>
+                <?php } ?>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Logout</a>
             </div>
         </div>

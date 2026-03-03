@@ -7,6 +7,9 @@ $message = "";
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $email = trim($_POST["email"] ?? "");
     $requesterHash = reset_requester_hash();
 
@@ -37,6 +40,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
 
         $stmt->close();
+    }
     }
 }
 ?>
@@ -94,6 +98,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             <?php } ?>
 
             <form method="POST" class="space-y-4">
+                <?php echo nestoida_csrf_field(); ?>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Email</label>
                     <input type="email" name="email" required class="w-full border border-slate-300 rounded-xl px-4 py-3 bg-white dark:bg-slate-900 dark:border-slate-700">

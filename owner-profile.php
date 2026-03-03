@@ -44,6 +44,9 @@ if (!$user) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    if (!nestoida_csrf_valid()) {
+        $error = "Invalid request. Please refresh and try again.";
+    } else {
     $fullName = trim($_POST["full_name"] ?? "");
     $email = trim($_POST["email"] ?? "");
     $newPassword = $_POST["new_password"] ?? "";
@@ -121,15 +124,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
         $upd->close();
     }
-}
-
-$photoPath = "";
-if (!empty($user["profile_photo"])) {
-    $candidate = "uploads/profiles/" . $user["profile_photo"];
-    if (is_file(__DIR__ . "/" . $candidate)) {
-        $photoPath = $candidate;
     }
 }
+
+$photoPath = nestoida_profile_photo_url($user["profile_photo"] ?? "");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -167,6 +165,7 @@ if (!empty($user["profile_photo"])) {
             <div class="mb-4 border border-rose-200 bg-rose-50 text-rose-700 rounded-xl p-3 text-sm"><?php echo htmlspecialchars($error); ?></div>
         <?php } ?>
         <form method="POST" enctype="multipart/form-data" class="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
+            <?php echo nestoida_csrf_field(); ?>
             <div class="flex items-center gap-4">
                 <?php if ($photoPath !== "") { ?>
                     <img src="<?php echo htmlspecialchars($photoPath); ?>" alt="Profile Photo" class="w-20 h-20 rounded-full object-cover border border-slate-200">

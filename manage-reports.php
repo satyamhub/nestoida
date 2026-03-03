@@ -7,6 +7,11 @@ if (!isset($_SESSION["admin"])) {
     exit();
 }
 
+if ($_SERVER["REQUEST_METHOD"] === "POST" && !nestoida_csrf_valid()) {
+    http_response_code(403);
+    exit("Invalid request.");
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["report_id"], $_POST["action"])) {
     $reportId = (int)$_POST["report_id"];
     $action = strtolower(trim((string)$_POST["action"]));
@@ -110,6 +115,7 @@ $rows = $conn->query("
                                     <td class="px-4 py-3 capitalize"><?php echo htmlspecialchars((string)$row["status"]); ?></td>
                                     <td class="px-4 py-3">
                                         <form method="POST" class="inline">
+                                            <?php echo nestoida_csrf_field(); ?>
                                             <input type="hidden" name="report_id" value="<?php echo (int)$row["id"]; ?>">
                                             <?php if ((string)$row["status"] === "open") { ?>
                                                 <button type="submit" name="action" value="resolve" class="px-3 py-1.5 rounded-full bg-emerald-600 text-white text-xs">Resolve</button>
