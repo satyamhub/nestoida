@@ -138,6 +138,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["submit_inquiry"])) {
             $inquiryStmt->execute();
             $inquiryStmt->close();
         }
+        $ownerInfoStmt = $conn->prepare("SELECT owner_user_id, title FROM properties WHERE id=? LIMIT 1");
+        if ($ownerInfoStmt) {
+            $ownerInfoStmt->bind_param("i", $id);
+            $ownerInfoStmt->execute();
+            $ownerInfoRes = $ownerInfoStmt->get_result();
+            $ownerInfo = $ownerInfoRes ? $ownerInfoRes->fetch_assoc() : null;
+            if ($ownerInfo && !empty($ownerInfo["owner_user_id"])) {
+                $noteStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, url) VALUES (?, ?, ?, ?)");
+                if ($noteStmt) {
+                    $noteTitle = "New inquiry received";
+                    $noteMsg = "You received a new inquiry for " . (string)($ownerInfo["title"] ?? "your listing") . ".";
+                    $noteUrl = "owner-dashboard.php";
+                    $noteStmt->bind_param("isss", $ownerInfo["owner_user_id"], $noteTitle, $noteMsg, $noteUrl);
+                    $noteStmt->execute();
+                    $noteStmt->close();
+                }
+            }
+            $ownerInfoStmt->close();
+        }
     }
     header("Location: property.php?id=" . $id . "&inquiry=1");
     exit();
@@ -193,6 +212,26 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["submit_feedback"])) {
             $insertRating->execute();
             $insertRating->close();
         }
+
+        $ownerInfoStmt = $conn->prepare("SELECT owner_user_id, title FROM properties WHERE id=? LIMIT 1");
+        if ($ownerInfoStmt) {
+            $ownerInfoStmt->bind_param("i", $id);
+            $ownerInfoStmt->execute();
+            $ownerInfoRes = $ownerInfoStmt->get_result();
+            $ownerInfo = $ownerInfoRes ? $ownerInfoRes->fetch_assoc() : null;
+            if ($ownerInfo && !empty($ownerInfo["owner_user_id"])) {
+                $noteStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, url) VALUES (?, ?, ?, ?)");
+                if ($noteStmt) {
+                    $noteTitle = "New feedback received";
+                    $noteMsg = "A new rating was posted for " . (string)($ownerInfo["title"] ?? "your listing") . ".";
+                    $noteUrl = "owner-dashboard.php";
+                    $noteStmt->bind_param("isss", $ownerInfo["owner_user_id"], $noteTitle, $noteMsg, $noteUrl);
+                    $noteStmt->execute();
+                    $noteStmt->close();
+                }
+            }
+            $ownerInfoStmt->close();
+        }
     }
 
     header("Location: property.php?id=" . $id . "&feedback=1");
@@ -205,6 +244,7 @@ $stmt = $conn->prepare("
         p.TYPE AS type,
         COALESCE(o.full_name, 'Nestoida Team') AS owner_name,
         o.profile_photo AS owner_photo,
+        COALESCE(o.owner_verified, 0) AS owner_verified,
         COALESCE(r.avg_rating, 0) AS avg_rating,
         COALESCE(r.rating_count, 0) AS rating_count
     FROM properties p
@@ -226,6 +266,45 @@ $row = $result ? $result->fetch_assoc() : null;
 if (!$row) {
     header("Location: index.php");
     exit();
+}
+$relatedListings = [];
+$relatedStmt = $conn->prepare("
+    SELECT
+        p.id,
+        p.title,
+        p.sector,
+        p.type,
+        p.rent,
+        p.image,
+        COALESCE(u.full_name, 'Nestoida Team') AS owner_name,
+        COALESCE(r.avg_rating, 0) AS avg_rating,
+        COALESCE(r.rating_count, 0) AS rating_count
+    FROM properties p
+    LEFT JOIN users u ON u.id = p.owner_user_id
+    LEFT JOIN (
+        SELECT property_id, ROUND(AVG(feedback_rating), 1) AS avg_rating, COUNT(*) AS rating_count
+        FROM listing_feedback
+        WHERE feedback_rating BETWEEN 1 AND 5
+        GROUP BY property_id
+    ) r ON r.property_id = p.id
+    WHERE p.status='approved'
+        AND p.id <> ?
+        AND (p.sector = ? OR p.type = ?)
+    ORDER BY p.id DESC
+    LIMIT 5
+");
+if ($relatedStmt) {
+    $sector = (string)($row["sector"] ?? "");
+    $type = (string)($row["type"] ?? "");
+    $relatedStmt->bind_param("iss", $id, $sector, $type);
+    $relatedStmt->execute();
+    $relatedRes = $relatedStmt->get_result();
+    if ($relatedRes) {
+        while ($rel = $relatedRes->fetch_assoc()) {
+            $relatedListings[] = $rel;
+        }
+    }
+    $relatedStmt->close();
 }
 $imageList = [];
 $imgStmt = $conn->prepare("SELECT image_name, label FROM property_images WHERE property_id=? ORDER BY is_cover DESC, sort_order ASC, id ASC");
@@ -604,7 +683,15 @@ try {
                         <?php } ?>
                         <div>
                             <p class="text-xs text-slate-500 dark:text-slate-300">Listed by</p>
-                            <p class="text-sm font-semibold"><?php echo htmlspecialchars((string)$row["owner_name"]); ?></p>
+                            <p class="text-sm font-semibold inline-flex items-center gap-2">
+                                <?php echo htmlspecialchars((string)$row["owner_name"]); ?>
+                                <?php if (!empty($row["owner_verified"])) { ?>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50 dark:border-cyan-600 dark:text-cyan-200 dark:bg-cyan-900/40">
+                                        <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                        Verified
+                                    </span>
+                                <?php } ?>
+                            </p>
                         </div>
                     </a>
                     <p class="text-3xl font-display text-slate-900 dark:text-slate-100">Rs <?php echo (int)$row['rent']; ?><span class="text-base font-body text-slate-500 dark:text-slate-300"> / month</span></p>
@@ -641,6 +728,29 @@ try {
                             Explore More Listings
                         </a>
                     </div>
+                    <?php if (!empty($relatedListings)) { ?>
+                        <section class="mt-6 rounded-2xl border border-slate-200 p-4 bg-white dark:bg-slate-900 dark:border-slate-700">
+                            <h3 class="font-display text-lg">Other Listings Nearby</h3>
+                            <div class="mt-3 space-y-3">
+                                <?php foreach ($relatedListings as $rel) { ?>
+                                    <a href="property.php?id=<?php echo (int)$rel["id"]; ?>" class="flex items-center gap-3 rounded-xl border border-slate-200 p-2 hover:border-slate-400 transition dark:border-slate-700 dark:hover:border-slate-500">
+                                        <div class="w-16 h-14 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex-shrink-0">
+                                            <img src="uploads/<?php echo htmlspecialchars($rel["image"]); ?>" alt="<?php echo htmlspecialchars($rel["title"]); ?>" class="w-full h-full object-cover">
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-semibold truncate"><?php echo htmlspecialchars($rel["title"]); ?></p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-300 truncate">Sector <?php echo htmlspecialchars((string)$rel["sector"]); ?> · <?php echo htmlspecialchars((string)$rel["type"]); ?></p>
+                                            <div class="mt-1 flex items-center gap-2">
+                                                <?php echo renderStars((float)$rel["avg_rating"]); ?>
+                                                <span class="text-xs text-amber-600 font-semibold"><?php echo $rel["rating_count"] > 0 ? number_format((float)$rel["avg_rating"], 1) . "/5" : "New"; ?></span>
+                                            </div>
+                                        </div>
+                                        <div class="text-sm font-semibold whitespace-nowrap">Rs <?php echo (int)$rel["rent"]; ?></div>
+                                    </a>
+                                <?php } ?>
+                            </div>
+                        </section>
+                    <?php } ?>
                     <section class="mt-5 rounded-2xl border border-slate-200 p-4 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">
                         <h3 class="font-display text-lg">Send Inquiry</h3>
                         <form method="POST" class="mt-3 space-y-2">

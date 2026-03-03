@@ -13,6 +13,7 @@ $stmt = $conn->prepare("
         p.*,
         p.type AS type,
         COALESCE(u.full_name, 'Nestoida Team') AS owner_name,
+        COALESCE(u.owner_verified, 0) AS owner_verified,
         COALESCE(r.avg_rating, 0) AS avg_rating,
         COALESCE(r.rating_count, 0) AS rating_count,
         f.created_at AS saved_at
@@ -101,6 +102,15 @@ function renderStars($avgRating)
                         <div class="p-5">
                             <h3 class="font-display text-xl"><?php echo htmlspecialchars((string)$row["title"]); ?></h3>
                             <p class="mt-1 text-sm text-slate-500 dark:text-slate-300">Sector <?php echo htmlspecialchars((string)$row["sector"]); ?> · <?php echo htmlspecialchars((string)$row["type"]); ?></p>
+                            <p class="mt-2 text-xs text-slate-500 dark:text-slate-300 inline-flex items-center gap-1">
+                                Hosted by <?php echo htmlspecialchars((string)($row["owner_name"] ?? "Nestoida Team")); ?>
+                                <?php if (!empty($row["owner_verified"])) { ?>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50 dark:border-cyan-600 dark:text-cyan-200 dark:bg-cyan-900/40">
+                                        <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                        Verified
+                                    </span>
+                                <?php } ?>
+                            </p>
                             <div class="mt-2 flex items-center gap-2">
                                 <?php echo renderStars((float)$row["avg_rating"]); ?>
                                 <span class="text-sm text-amber-600 font-semibold"><?php echo (int)$row["rating_count"] > 0 ? number_format((float)$row["avg_rating"], 1) : "Not rated"; ?></span>

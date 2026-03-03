@@ -1,6 +1,7 @@
 (function () {
-    var LOADER_ID = "nestoida-global-loader";
-    var HIDE_DELAY_MS = 420;
+    var LOADER_ID = "nestoida-top-loader";
+    var HIDE_DELAY_MS = 220;
+    var progressTimer = null;
 
     function createLoader() {
         if (document.getElementById(LOADER_ID)) return null;
@@ -9,59 +10,60 @@
         loader.id = LOADER_ID;
         loader.setAttribute("aria-live", "polite");
         loader.style.position = "fixed";
-        loader.style.inset = "0";
+        loader.style.top = "0";
+        loader.style.left = "0";
+        loader.style.right = "0";
+        loader.style.height = "3px";
         loader.style.zIndex = "10000";
-        loader.style.display = "flex";
-        loader.style.alignItems = "center";
-        loader.style.justifyContent = "center";
-        loader.style.background = "rgba(255,255,255,0.96)";
-        loader.style.backdropFilter = "blur(2px)";
-        loader.style.opacity = "0";
+        loader.style.background = "transparent";
         loader.style.pointerEvents = "none";
-        loader.style.transition = "opacity 220ms ease";
 
-        if (document.documentElement.classList.contains("dark")) {
-            loader.style.background = "rgba(2,6,23,0.96)";
-        }
+        var bar = document.createElement("div");
+        bar.style.height = "100%";
+        bar.style.width = "0%";
+        bar.style.background = "linear-gradient(90deg, #ff385c 0%, #ff8a5b 50%, #22d3ee 100%)";
+        bar.style.transition = "width 280ms ease, opacity 220ms ease";
+        bar.style.opacity = "0";
 
-        var inner = document.createElement("div");
-        inner.style.display = "flex";
-        inner.style.flexDirection = "column";
-        inner.style.alignItems = "center";
-        inner.style.gap = "12px";
-
-        var logo = document.createElement("img");
-        logo.src = "assets/img/nestoida-logo.svg";
-        logo.alt = "Nestoida";
-        logo.style.width = "72px";
-        logo.style.height = "72px";
-
-        var text = document.createElement("p");
-        text.textContent = "Loading Nestoida...";
-        text.style.margin = "0";
-        text.style.fontSize = "12px";
-        text.style.fontWeight = "700";
-        text.style.letterSpacing = "0.12em";
-        text.style.textTransform = "uppercase";
-        text.style.color = document.documentElement.classList.contains("dark") ? "#e2e8f0" : "#0f172a";
-
-        inner.appendChild(logo);
-        inner.appendChild(text);
-        loader.appendChild(inner);
+        loader.appendChild(bar);
         document.body.appendChild(loader);
+        loader._bar = bar;
         return loader;
     }
 
     function showLoader(loader) {
         if (!loader) return;
-        loader.style.pointerEvents = "auto";
-        loader.style.opacity = "1";
+        if (progressTimer) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+        }
+        var bar = loader._bar;
+        if (!bar) return;
+        bar.style.opacity = "1";
+        bar.style.width = "12%";
+        progressTimer = setInterval(function () {
+            var current = parseFloat(bar.style.width) || 0;
+            var next = Math.min(92, current + Math.random() * 8);
+            bar.style.width = next + "%";
+        }, 260);
     }
 
     function hideLoader(loader) {
         if (!loader) return;
-        loader.style.opacity = "0";
-        loader.style.pointerEvents = "none";
+        if (progressTimer) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+        }
+        var bar = loader._bar;
+        if (!bar) return;
+        bar.style.width = "100%";
+        setTimeout(function () {
+            bar.style.opacity = "0";
+            bar.style.width = "0%";
+        }, HIDE_DELAY_MS);
+    }
+    function hidePageLoader() {
+        return;
     }
 
     function boot() {
@@ -79,12 +81,24 @@
             if (link.target === "_blank" || link.hasAttribute("download")) return;
             var href = link.getAttribute("href") || "";
             if (href.startsWith("#") || href.startsWith("javascript:")) return;
+            if (link.dataset && link.dataset.noLoader === "true") return;
             showLoader(loader);
         }, true);
 
         document.addEventListener("submit", function () {
             showLoader(loader);
         }, true);
+
+        window.addEventListener("pageshow", function () {
+            hideLoader(loader);
+            hidePageLoader();
+        });
+        window.addEventListener("visibilitychange", function () {
+            if (document.visibilityState === "visible") {
+                hideLoader(loader);
+                hidePageLoader();
+            }
+        });
     }
 
     if (document.readyState === "loading") {

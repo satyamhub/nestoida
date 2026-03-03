@@ -8,7 +8,7 @@ if ($ownerId <= 0) {
     exit();
 }
 
-$ownerStmt = $conn->prepare("SELECT id, full_name, role, profile_photo FROM users WHERE id=? LIMIT 1");
+$ownerStmt = $conn->prepare("SELECT id, full_name, role, profile_photo, owner_verified FROM users WHERE id=? LIMIT 1");
 $ownerStmt->bind_param("i", $ownerId);
 $ownerStmt->execute();
 $ownerRes = $ownerStmt->get_result();
@@ -127,7 +127,15 @@ if (!empty($owner["profile_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . 
                     <div class="w-11 h-11 rounded-full bg-slate-100 border border-slate-200"></div>
                 <?php } ?>
                 <div>
-                    <h1 class="font-display text-2xl"><?php echo htmlspecialchars((string)$owner["full_name"]); ?></h1>
+                    <h1 class="font-display text-2xl inline-flex items-center gap-2">
+                        <?php echo htmlspecialchars((string)$owner["full_name"]); ?>
+                        <?php if (!empty($owner["owner_verified"])) { ?>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50 dark:border-cyan-600 dark:text-cyan-200 dark:bg-cyan-900/40">
+                                <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                Verified
+                            </span>
+                        <?php } ?>
+                    </h1>
                     <p class="text-xs text-slate-500 dark:text-slate-300">Approved listings by this owner</p>
                 </div>
             </div>

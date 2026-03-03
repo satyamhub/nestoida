@@ -8,6 +8,20 @@ if (!isset($_SESSION["user_id"], $_SESSION["user_role"]) || $_SESSION["user_role
 }
 
 $ownerId = (int)$_SESSION["user_id"];
+$ownerName = (string)($_SESSION["user_name"] ?? "Owner");
+$ownerVerified = false;
+$ownerNameStmt = $conn->prepare("SELECT full_name, owner_verified FROM users WHERE id=? LIMIT 1");
+if ($ownerNameStmt) {
+    $ownerNameStmt->bind_param("i", $ownerId);
+    $ownerNameStmt->execute();
+    $ownerNameRes = $ownerNameStmt->get_result();
+    $ownerNameRow = $ownerNameRes ? $ownerNameRes->fetch_assoc() : null;
+    if ($ownerNameRow && !empty($ownerNameRow["full_name"])) {
+        $ownerName = (string)$ownerNameRow["full_name"];
+    }
+    $ownerVerified = !empty($ownerNameRow["owner_verified"]);
+    $ownerNameStmt->close();
+}
 $updated = isset($_GET["updated"]) && $_GET["updated"] === "1";
 
 $stmt = $conn->prepare("
@@ -106,7 +120,7 @@ $recentFeedbackStmt->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Owner Dashboard - Nestoida</title>
+    <title><?php echo htmlspecialchars($ownerName); ?> Dashboard - Nestoida</title>
     <script>
         (function () {
             try {
@@ -115,6 +129,117 @@ $recentFeedbackStmt->close();
                 }
             } catch (e) {}
         })();
+    </script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const btn = document.getElementById("owner-notif-btn");
+            const panel = document.getElementById("owner-notif-panel");
+            const list = document.getElementById("owner-notif-list");
+            const badge = document.getElementById("owner-notif-badge");
+            const markAll = document.getElementById("owner-notif-mark");
+            let open = false;
+
+            function render(items) {
+                if (!list) return;
+                if (!items || items.length === 0) {
+                    list.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-300">No notifications yet.</p>';
+                    return;
+                }
+                list.innerHTML = items.map(function (note) {
+                    const isNew = parseInt(note.is_read, 10) === 0;
+                    const badgeHtml = isNew ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-200 text-emerald-700 bg-emerald-50">New</span>' : '';
+                    const openLink = note.url ? '<a class="text-xs text-cyan-700 dark:text-cyan-300" href="' + note.url + '">Open</a>' : '';
+                    const markBtn = isNew ? '<button data-id="' + note.id + '" class="text-xs text-slate-500 underline">Mark read</button>' : '';
+                    return '<article class="rounded-xl border border-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 dark:border-slate-700">' +
+                        '<div class="flex items-center justify-between gap-2">' +
+                            '<p class="text-sm font-semibold">' + note.title + badgeHtml + '</p>' +
+                            '<p class="text-xs text-slate-500">' + note.created_at + '</p>' +
+                        '</div>' +
+                        '<p class="mt-1 text-sm text-slate-700 dark:text-slate-200">' + note.message + '</p>' +
+                        '<div class="mt-2 flex items-center gap-3">' + openLink + markBtn + '</div>' +
+                    '</article>';
+                }).join('');
+            }
+
+            function fetchCount() {
+                if (!badge) return;
+                fetch("owner-notifications-count.php", { credentials: "same-origin" })
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        const unread = parseInt(data.unread || 0, 10);
+                        badge.textContent = unread;
+                        badge.classList.toggle("hidden", unread <= 0);
+                    })
+                    .catch(function () {});
+            }
+
+            function fetchList() {
+                fetch("owner-notifications-list.php?filter=all", { credentials: "same-origin" })
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) { render(data.items || []); })
+                    .catch(function () {});
+            }
+
+            function markRead(id) {
+                const body = new URLSearchParams();
+                body.set("action", id ? "one" : "all");
+                if (id) body.set("id", String(id));
+                fetch("owner-notifications-mark.php", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: body.toString()
+                }).then(function () {
+                    fetchCount();
+                    fetchList();
+                }).catch(function () {});
+            }
+
+            if (btn && panel) {
+                btn.addEventListener("click", function () {
+                    open = !open;
+                    panel.classList.toggle("hidden", !open);
+                    if (open) fetchList();
+                });
+                document.addEventListener("click", function (event) {
+                    if (!open) return;
+                    if (panel.contains(event.target) || btn.contains(event.target)) return;
+                    open = false;
+                    panel.classList.add("hidden");
+                });
+            }
+
+            if (markAll) {
+                markAll.addEventListener("click", function () {
+                    markRead(null);
+                });
+            }
+
+            if (list) {
+                list.addEventListener("click", function (event) {
+                    const target = event.target;
+                    if (!(target instanceof HTMLElement)) return;
+                    const id = target.getAttribute("data-id");
+                    if (id) {
+                        markRead(id);
+                    }
+                });
+            }
+
+            fetchCount();
+            setInterval(fetchCount, 20000);
+
+            // Welcome dropdown on every login
+            if (panel && btn) {
+                panel.classList.remove("hidden");
+                open = true;
+                fetchList();
+                setTimeout(function () {
+                    panel.classList.add("hidden");
+                    open = false;
+                }, 3000);
+            }
+        });
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -144,14 +269,38 @@ $recentFeedbackStmt->close();
                     <a href="index.php" aria-label="Go to homepage" class="inline-flex">
                         <img src="assets/img/nestoida-logo.svg" alt="Nestoida Logo" class="w-9 h-9">
                     </a>
-                    <h1 class="font-display text-2xl">Owner Dashboard</h1>
+                    <h1 class="font-display text-2xl inline-flex items-center gap-2">
+                        <?php echo htmlspecialchars($ownerName); ?> Dashboard
+                        <?php if ($ownerVerified) { ?>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50 dark:border-cyan-600 dark:text-cyan-200 dark:bg-cyan-900/40">
+                                <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                Verified
+                            </span>
+                        <?php } ?>
+                    </h1>
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-300">Welcome, <?php echo htmlspecialchars($_SESSION["user_name"] ?? "Owner"); ?></p>
             </div>
-            <div class="flex gap-2 text-sm">
+            <div class="flex items-center gap-2 text-sm">
                 <button id="theme-toggle" type="button" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">
                     <span id="theme-toggle-label">Dark</span>
                 </button>
+                <div class="relative z-50">
+                    <button id="owner-notif-btn" type="button" class="relative px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">
+                        <span class="sr-only">Notifications</span>
+                        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a5 5 0 00-5 5v2.6l-.9 1.8a1 1 0 00.9 1.6h12a1 1 0 00.9-1.6L15 9.6V7a5 5 0 00-5-5z"/><path d="M8.2 16a1.8 1.8 0 003.6 0H8.2z"/></svg>
+                        <span id="owner-notif-badge" class="absolute -top-1 -right-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full bg-rose-500 text-white hidden">0</span>
+                    </button>
+                    <div id="owner-notif-panel" class="hidden absolute right-0 mt-2 w-80 rounded-2xl border border-slate-200 bg-white shadow-lg dark:bg-slate-900 dark:border-slate-700 z-50 pointer-events-auto">
+                        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                            <p class="font-semibold text-sm">Notifications</p>
+                            <button id="owner-notif-mark" type="button" class="text-xs text-cyan-700 dark:text-cyan-300">Mark all read</button>
+                        </div>
+                        <div id="owner-notif-list" class="max-h-80 overflow-y-auto p-3 space-y-2">
+                            <p class="text-sm text-slate-500 dark:text-slate-300">No notifications yet.</p>
+                        </div>
+                    </div>
+                </div>
                 <a href="owner-profile.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Profile</a>
                 <a href="owner-analytics.php" class="px-3 py-2 rounded-full border border-slate-300 dark:border-slate-700">Analytics</a>
                 <a href="add-property.php" class="px-3 py-2 rounded-full bg-slate-900 text-white">Add Property</a>

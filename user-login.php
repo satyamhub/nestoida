@@ -425,7 +425,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             <div class="mt-4 flex gap-2 text-sm">
                 <a href="user-register.php" class="chip px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700">Create Account</a>
-                <a href="index.php" class="chip px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700">Home</a>
+                <a href="index.php" data-no-loader="true" class="chip px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700">Home</a>
                 <a href="login.php" class="chip px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700">Admin Login</a>
             </div>
             </div>

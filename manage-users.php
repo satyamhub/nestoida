@@ -28,6 +28,31 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["action"], $_POST["use
                 $error = "Could not update role.";
             }
             $stmt->close();
+        } elseif ($action === "toggle_owner_verified" && isset($_POST["owner_verified"])) {
+            $verified = (int)$_POST["owner_verified"] === 1 ? 1 : 0;
+            $stmt = $conn->prepare("UPDATE users SET owner_verified=? WHERE id=? AND role='owner'");
+            $stmt->bind_param("ii", $verified, $userId);
+            if ($stmt->execute()) {
+                if ($stmt->affected_rows > 0) {
+                    $message = $verified ? "Owner verified." : "Owner verification removed.";
+                    if ($verified === 1) {
+                        $noteStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, url) VALUES (?, ?, ?, ?)");
+                        if ($noteStmt) {
+                            $title = "Owner verification approved";
+                            $msg = "Your owner profile is now verified. Your listings will show the verified badge.";
+                            $url = "owner-dashboard.php";
+                            $noteStmt->bind_param("isss", $userId, $title, $msg, $url);
+                            $noteStmt->execute();
+                            $noteStmt->close();
+                        }
+                    }
+                } else {
+                    $error = "Only owners can be verified.";
+                }
+            } else {
+                $error = "Could not update owner verification.";
+            }
+            $stmt->close();
         } elseif ($action === "delete_user") {
             $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
             $stmt->bind_param("i", $userId);
@@ -43,12 +68,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["action"], $_POST["use
 
 if ($search !== "") {
     $like = "%" . $search . "%";
-    $stmt = $conn->prepare("SELECT id, full_name, email, role, email_verified_at, created_at, profile_photo FROM users WHERE full_name LIKE ? OR email LIKE ? ORDER BY id DESC");
+    $stmt = $conn->prepare("SELECT id, full_name, email, role, owner_verified, email_verified_at, created_at, profile_photo FROM users WHERE full_name LIKE ? OR email LIKE ? ORDER BY id DESC");
     $stmt->bind_param("ss", $like, $like);
     $stmt->execute();
     $usersResult = $stmt->get_result();
 } else {
-    $usersResult = $conn->query("SELECT id, full_name, email, role, email_verified_at, created_at, profile_photo FROM users ORDER BY id DESC");
+    $usersResult = $conn->query("SELECT id, full_name, email, role, owner_verified, email_verified_at, created_at, profile_photo FROM users ORDER BY id DESC");
 }
 ?>
 <!DOCTYPE html>
@@ -97,6 +122,7 @@ if ($search !== "") {
                             <th class="text-left px-4 py-3">Email</th>
                             <th class="text-left px-4 py-3">Role</th>
                             <th class="text-left px-4 py-3">Verified</th>
+                            <th class="text-left px-4 py-3">Owner Badge</th>
                             <th class="text-left px-4 py-3">Joined</th>
                             <th class="text-left px-4 py-3">Actions</th>
                         </tr>
@@ -106,6 +132,8 @@ if ($search !== "") {
                             <?php while ($u = $usersResult->fetch_assoc()) { ?>
                                 <?php
                                 $uPhoto = "";
+                                $isOwnerVerified = !empty($u["owner_verified"]);
+                                $ownerBadgeClass = $isOwnerVerified ? "border-cyan-300 text-cyan-700 bg-cyan-50" : "border-slate-200 text-slate-500 bg-slate-50";
                                 if (!empty($u["profile_photo"]) && is_file(__DIR__ . "/uploads/profiles/" . $u["profile_photo"])) {
                                     $uPhoto = "uploads/profiles/" . $u["profile_photo"];
                                 }
@@ -127,6 +155,18 @@ if ($search !== "") {
                                     <td class="px-4 py-3"><?php echo htmlspecialchars($u["email"]); ?></td>
                                     <td class="px-4 py-3 capitalize"><?php echo htmlspecialchars($u["role"]); ?></td>
                                     <td class="px-4 py-3"><?php echo !empty($u["email_verified_at"]) ? "Yes" : "No"; ?></td>
+                                    <td class="px-4 py-3">
+                                        <?php if ($u["role"] === "owner") { ?>
+                                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border <?php echo $ownerBadgeClass; ?>">
+                                                <?php if ($isOwnerVerified) { ?>
+                                                    <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                                <?php } ?>
+                                                <?php echo $isOwnerVerified ? "Verified" : "Not verified"; ?>
+                                            </span>
+                                        <?php } else { ?>
+                                            <span class="text-xs text-slate-400">—</span>
+                                        <?php } ?>
+                                    </td>
                                     <td class="px-4 py-3"><?php echo htmlspecialchars((string)$u["created_at"]); ?></td>
                                     <td class="px-4 py-3">
                                         <div class="flex flex-wrap gap-2">
@@ -139,6 +179,16 @@ if ($search !== "") {
                                                 </select>
                                                 <button type="submit" class="px-3 py-1.5 rounded-full border border-slate-300">Update</button>
                                             </form>
+                                            <?php if ($u["role"] === "owner") { ?>
+                                                <form method="POST" class="inline">
+                                                    <input type="hidden" name="action" value="toggle_owner_verified">
+                                                    <input type="hidden" name="user_id" value="<?php echo (int)$u["id"]; ?>">
+                                                    <input type="hidden" name="owner_verified" value="<?php echo $isOwnerVerified ? 0 : 1; ?>">
+                                                    <button type="submit" class="px-3 py-1.5 rounded-full border border-cyan-300 text-cyan-700">
+                                                        <?php echo $isOwnerVerified ? "Remove Badge" : "Verify Owner"; ?>
+                                                    </button>
+                                                </form>
+                                            <?php } ?>
                                             <form method="POST" onsubmit="return confirm('Delete this user?');" class="inline">
                                                 <input type="hidden" name="action" value="delete_user">
                                                 <input type="hidden" name="user_id" value="<?php echo (int)$u["id"]; ?>">

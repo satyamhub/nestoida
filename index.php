@@ -14,6 +14,7 @@ if ($searchQuery !== "") {
             p.TYPE AS type,
             COALESCE(u.full_name, 'Nestoida Team') AS owner_name,
             u.profile_photo AS owner_photo,
+            COALESCE(u.owner_verified, 0) AS owner_verified,
             COALESCE(r.avg_rating, 0) AS avg_rating,
             COALESCE(r.rating_count, 0) AS rating_count
         FROM properties p
@@ -50,6 +51,7 @@ if ($searchQuery !== "") {
             p.TYPE AS type,
             COALESCE(u.full_name, 'Nestoida Team') AS owner_name,
             u.profile_photo AS owner_photo,
+            COALESCE(u.owner_verified, 0) AS owner_verified,
             COALESCE(r.avg_rating, 0) AS avg_rating,
             COALESCE(r.rating_count, 0) AS rating_count
         FROM properties p
@@ -141,19 +143,42 @@ function listingSpecText($row)
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <noscript>
         <style>
-            #page-loader, #listing-loader { display: none !important; }
+            #listing-loader { display: none !important; }
         </style>
     </noscript>
+    <style>
+        .theme-smooth,
+        .theme-smooth * {
+            transition:
+                background-color .6s ease,
+                color .6s ease,
+                border-color .6s ease,
+                box-shadow .6s ease,
+                fill .6s ease,
+                stroke .6s ease,
+                opacity .6s ease;
+        }
+        .theme-fade {
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity .6s ease;
+            background: linear-gradient(180deg, #87d7ff 0%, #d7f2ff 55%, #f7fdff 100%);
+        }
+        .dark .theme-fade {
+            background: linear-gradient(180deg, #0a0f1f 0%, #0b1020 100%);
+        }
+        .theme-fade-active .theme-fade {
+            opacity: .35;
+        }
+    </style>
     <link rel="stylesheet" href="assets/css/airbnb.css">
     <link rel="icon" type="image/svg+xml" href="assets/img/nestoida-logo.svg">
 </head>
-<body class="airbnb-ui font-body bg-gradient-to-b from-slate-50 to-white text-slate-900 min-h-screen dark:from-slate-950 dark:to-slate-900 dark:text-slate-100">
-<div id="page-loader" class="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex items-center justify-center">
-    <div class="flex flex-col items-center gap-4 text-brand-slate dark:text-slate-100">
-        <img src="assets/img/nestoida-logo.svg" alt="Nestoida Logo" class="w-20 h-20">
-        <span class="text-sm font-semibold tracking-[0.14em] uppercase">Preparing Nestoida...</span>
-    </div>
-</div>
+<body class="airbnb-ui font-body bg-gradient-to-b from-slate-50 to-white text-slate-900 min-h-screen dark:from-slate-950 dark:to-slate-900 dark:text-slate-100 theme-smooth">
+<div id="theme-fade" class="theme-fade" aria-hidden="true"></div>
 
 <header class="sticky top-0 z-40 backdrop-blur bg-white/85 border-b border-slate-200 dark:bg-slate-950/80 dark:border-slate-800">
     <div class="max-w-6xl mx-auto px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -169,7 +194,16 @@ function listingSpecText($row)
         </div>
         <nav class="flex flex-wrap gap-2 text-sm">
             <button id="theme-toggle" type="button" class="px-3 py-2 rounded-full border border-slate-300 hover:border-slate-900 dark:border-slate-700 dark:hover:border-slate-400 transition">
-                <span id="theme-toggle-label">Dark</span>
+                <span id="theme-toggle-label" class="sr-only">Dark</span>
+                <span class="inline-flex items-center gap-2">
+                    <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 text-amber-400">
+                        <circle cx="12" cy="12" r="4" fill="currentColor"/>
+                        <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-linecap="round" stroke-width="2" fill="none"/>
+                    </svg>
+                    <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 text-sky-200 hidden">
+                        <path d="M20.5 14.2A7.5 7.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" fill="currentColor"/>
+                    </svg>
+                </span>
             </button>
             <a href="index.php" class="px-3 py-2 rounded-full bg-slate-900 text-white dark:bg-cyan-700">Home</a>
             <?php if ($isAdminLoggedIn) { ?>
@@ -318,8 +352,8 @@ function listingSpecText($row)
                         data-url="property.php?id=<?php echo (int)$row['id']; ?>"
                         tabindex="0"
                         role="link"
-                        onclick="window.open(this.dataset.url, '_blank', 'noopener')"
-                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.open(this.dataset.url, '_blank', 'noopener');}"
+                        onclick="window.location.href=this.dataset.url"
+                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href=this.dataset.url;}"
                     >
                         <div class="relative">
                             <img
@@ -380,12 +414,18 @@ function listingSpecText($row)
                                 <?php } else { ?>
                                     <div class="w-8 h-8 rounded-full bg-slate-100 border border-slate-200"></div>
                                 <?php } ?>
-                                <p class="text-xs text-slate-600 dark:text-slate-300">Hosted by <?php echo htmlspecialchars((string)($row["owner_name"] ?? "Nestoida Team")); ?></p>
+                                <p class="text-xs text-slate-600 dark:text-slate-300 inline-flex items-center gap-1">
+                                    Hosted by <?php echo htmlspecialchars((string)($row["owner_name"] ?? "Nestoida Team")); ?>
+                                    <?php if (!empty($row["owner_verified"])) { ?>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50 dark:border-cyan-600 dark:text-cyan-200 dark:bg-cyan-900/40">
+                                            <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                                            Verified
+                                        </span>
+                                    <?php } ?>
+                                </p>
                             </a>
                             <a
                                 href="property.php?id=<?php echo (int)$row['id']; ?>"
-                                target="_blank"
-                                rel="noopener"
                                 onclick="event.stopPropagation();"
                                 class="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-semibold group-hover:bg-cyan-700 transition"
                             >
@@ -411,7 +451,6 @@ function listingSpecText($row)
 
 <script>
 window.addEventListener("load", function () {
-    const pageLoader = document.getElementById("page-loader");
     const listingLoader = document.getElementById("listing-loader");
     const listingContent = document.getElementById("listing-content");
 
@@ -425,12 +464,6 @@ window.addEventListener("load", function () {
         }, 450);
     }
 
-    if (pageLoader) {
-        pageLoader.classList.add("opacity-0", "pointer-events-none", "transition-opacity", "duration-300");
-        setTimeout(function () {
-            pageLoader.remove();
-        }, 300);
-    }
 });
 
 (function () {
@@ -534,22 +567,38 @@ window.addEventListener("load", function () {
 (function () {
     const btn = document.getElementById("theme-toggle");
     const label = document.getElementById("theme-toggle-label");
+    const iconSun = document.getElementById("theme-icon-sun");
+    const iconMoon = document.getElementById("theme-icon-moon");
     function syncThemeLabel() {
         if (!label) return;
         label.textContent = document.documentElement.classList.contains("dark") ? "Light" : "Dark";
     }
+    function syncThemeIcons() {
+        const isDark = document.documentElement.classList.contains("dark");
+        if (iconSun && iconMoon) {
+            iconSun.classList.toggle("hidden", isDark);
+            iconMoon.classList.toggle("hidden", !isDark);
+        }
+    }
     syncThemeLabel();
+    syncThemeIcons();
     if (btn) {
         btn.addEventListener("click", function () {
             const root = document.documentElement;
             const isDark = root.classList.toggle("dark");
+            document.body.classList.add("theme-fade-active");
             try {
                 localStorage.setItem("nestoida_theme", isDark ? "dark" : "light");
             } catch (e) {}
             syncThemeLabel();
+            syncThemeIcons();
+            setTimeout(function () {
+                document.body.classList.remove("theme-fade-active");
+            }, 650);
         });
     }
 })();
+
 </script>
     <script src="assets/js/nestoida-loader.js"></script>
     <script src="assets/js/mobile-bottom-nav.js"></script>

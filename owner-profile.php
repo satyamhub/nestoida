@@ -30,7 +30,7 @@ function profile_upload_error($code)
     }
 }
 
-$stmt = $conn->prepare("SELECT id, full_name, email, role, profile_photo FROM users WHERE id=? LIMIT 1");
+$stmt = $conn->prepare("SELECT id, full_name, email, role, profile_photo, owner_verified FROM users WHERE id=? LIMIT 1");
 $stmt->bind_param("i", $userId);
 $stmt->execute();
 $userRes = $stmt->get_result();
@@ -144,7 +144,15 @@ if (!empty($user["profile_photo"])) {
 <body class="airbnb-ui font-body bg-slate-50 min-h-screen text-slate-900">
     <header class="sticky top-0 z-40 backdrop-blur bg-white/85 border-b border-slate-200">
         <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-            <h1 class="font-display text-2xl">Owner Profile</h1>
+            <h1 class="font-display text-2xl inline-flex items-center gap-2">
+                Owner Profile
+                <?php if (!empty($user["owner_verified"])) { ?>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-cyan-200 text-cyan-700 bg-cyan-50">
+                        <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 0a10 10 0 100 20 10 10 0 000-20zm4.2 7.3-4.8 5a1 1 0 01-1.4 0l-2.2-2.3a1 1 0 011.4-1.4l1.5 1.5 4.1-4.2a1 1 0 011.4 1.4z"/></svg>
+                        Verified
+                    </span>
+                <?php } ?>
+            </h1>
             <div class="flex gap-2 text-sm">
                 <a href="owner-dashboard.php" class="px-3 py-2 rounded-full border border-slate-300">Owner Dashboard</a>
                 <a href="logout.php" class="px-3 py-2 rounded-full border border-slate-300">Logout</a>
