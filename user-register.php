@@ -3,6 +3,16 @@ session_start();
 include "db.php";
 require_once "reset-utils.php";
 
+$isUserLoggedIn = isset($_SESSION["user_id"], $_SESSION["user_role"]);
+if ($isUserLoggedIn) {
+    if ($_SESSION["user_role"] === "owner") {
+        header("Location: owner-dashboard.php");
+    } else {
+        header("Location: index.php");
+    }
+    exit();
+}
+
 $error = "";
 $message = "";
 $devVerificationLink = "";

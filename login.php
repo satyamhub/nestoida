@@ -3,6 +3,11 @@ session_start();
 include "db.php";
 $error = "";
 
+if (isset($_SESSION["admin"])) {
+    header("Location: dashboard.php");
+    exit();
+}
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (!nestoida_csrf_valid()) {
         $error = "Invalid request. Please refresh and try again.";
