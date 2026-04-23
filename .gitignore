@@ -1,4 +1,3 @@
-.gitignore
 uploads/
 db.php
 .htaccess
